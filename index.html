@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnatchPicks — Product, Flows &amp; Architecture</title>
+  <meta name="description" content="How SnatchPicks works: a community-verified deal platform for Indian shoppers. Product overview, user flows, deal lifecycle, ranking, alerts, data model and system architecture.">
+  <meta property="og:title" content="SnatchPicks — Product, Flows & Architecture">
+  <meta property="og:description" content="A guided tour of SnatchPicks: what it is, how deals flow from discovery to your phone, and how the system is built.">
+  <meta name="theme-color" content="#f97316">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
+  <link rel="stylesheet" href="assets/style.css">
+  <script type="module" src="assets/site.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <a class="brand" href="#top">Snatch<span>Picks</span></a>
+    <ol>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#product">The product</a></li>
+      <li><a href="#flow">Core flow</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#lifecycle">Deal lifecycle</a></li>
+      <li><a href="#ranking">Ranking &amp; trust</a></li>
+      <li><a href="#alerts">Alerts &amp; notifications</a></li>
+      <li><a href="#data">Data model</a></li>
+      <li><a href="#clients">Apps &amp; clients</a></li>
+      <li><a href="#platform">Platform &amp; DevOps</a></li>
+      <li><a href="#stack">Tech stack</a></li>
+      <li><a href="#status">Status &amp; roadmap</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </nav>
+
+  <main id="top">
+    <!-- ───────────────────────── 1. Overview ───────────────────────── -->
+    <header class="hero" id="overview">
+      <div class="eyebrow">Product &amp; architecture guide</div>
+      <h1>Snatch<span>Picks</span></h1>
+      <p class="lead">
+        A community-driven, mobile-first deal platform for Indian shoppers. People and partner
+        feeds post deals, an automated pipeline weeds out fakes, the community votes the best ones
+        up, and shoppers get alerted the moment something they care about drops.
+      </p>
+      <div class="pills">
+        <span class="pill">🇮🇳 India only · INR · en_IN</span>
+        <span class="pill">📱 Mobile-first web + native app</span>
+        <span class="pill">🗳️ Community-ranked</span>
+        <span class="pill">🤖 AI-assisted moderation</span>
+        <span class="pill">🔔 Real-time alerts</span>
+      </div>
+    </header>
+
+    <div class="callout">
+      <strong>Brand promise: “Every deal verified. No fake MRP. Ever.”</strong>
+      Most deal sites are a firehose of inflated “was ₹9,999, now ₹999” listings. SnatchPicks treats
+      trust as the product: every submission passes safety, duplicate and price-sanity checks, and
+      the community keeps confirming whether a deal still works.
+    </div>
+
+    <div class="grid">
+      <div class="card"><span class="icon">🎯</span><h4>Who it's for</h4><p>Gen-Z and young deal-hunting shoppers in India who live on their phones and discover products through Instagram and Telegram.</p></div>
+      <div class="card"><span class="icon">🪜</span><h4>Niche-first launch</h4><p>Beauty &amp; skincare → fashion → baby &amp; parenting: the same shopper across her life stages, instead of going broad and diluting the cold start.</p></div>
+      <div class="card"><span class="icon">📣</span><h4>Two growth engines</h4><p>Instagram + Telegram for fast traffic from day one; Google/SEO on real deal, store and category pages for compounding growth.</p></div>
+      <div class="card"><span class="icon">💸</span><h4>Business model</h4><p>Bootstrapped on affiliate revenue: outbound clicks to Amazon, Flipkart, Myntra, Nykaa and partner networks carry affiliate tags.</p></div>
+    </div>
+
+    <!-- ───────────────────────── 2. Product ───────────────────────── -->
+    <section id="product">
+      <h2><span class="num">2</span>The product</h2>
+      <p class="intro">What a shopper can actually do today, and where they do it.</p>
+
+      <h3>Surfaces</h3>
+      <div class="grid">
+        <div class="card"><span class="icon">🌐</span><h4>Web app (primary)</h4><p>Next.js site at <code>snatchpicks.com</code>. Feeds, deal pages, search, store and category pages, alerts, saved deals, profile, admin console.</p></div>
+        <div class="card"><span class="icon">📲</span><h4>Native app</h4><p>Expo app for iOS &amp; Android: a thin client over the same API. Deals feed, search, alerts, profile, deal detail with comments and price sparkline.</p></div>
+        <div class="card"><span class="icon">🧩</span><h4>Browser extension</h4><p>Chrome (MV3). On a product page at a supported store it shows the SnatchPicks deal, price history and cashback; at checkout it offers coupons to try.</p></div>
+        <div class="card"><span class="icon">✈️</span><h4>Telegram</h4><p>Deals that become genuinely hot are auto-posted to the SnatchPicks channel; a bot answers commands like top deals and big discounts.</p></div>
+        <div class="card"><span class="icon">✉️</span><h4>Email &amp; push</h4><p>Instant alert pushes, “expiring soon” and “just went LOOT” nudges, price-drop alerts, and daily/weekly digests.</p></div>
+      </div>
+
+      <h3>Core features</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Feature</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Deal feeds</strong></td><td>Tabs for <em>Hot</em> (hot score), <em>New</em>, <em>Top</em>, <em>Discussed</em> and <em>Fresh</em>; filter by category or store; time windows for today and this week.</td></tr>
+          <tr><td><strong>Deal page</strong></td><td>Price vs. original price, discount, coupon code, bank-card offer, store cashback, expiry countdown, price history, AI summary, threaded comments.</td></tr>
+          <tr><td><strong>Submit a deal</strong></td><td>Title, description, URL, prices, store, category, coupon, bank offer, expiry, city, plus flags such as YMMV, new-users-only, card-specific, in-store, recurring.</td></tr>
+          <tr><td><strong>Voting</strong></td><td>One 👍/👎 per user per deal (toggle or switch). Votes drive ranking and the poster's reputation.</td></tr>
+          <tr><td><strong>“Still working?”</strong></td><td>Separate WORKING / EXPIRED votes so the community can retire dead deals quickly.</td></tr>
+          <tr><td><strong>Comments</strong></td><td>Threaded replies with flairs (working, expired, bank tip, stacking tip, question) and likes.</td></tr>
+          <tr><td><strong>Deal alerts</strong></td><td>Keyword / category / store / minimum-discount filters, delivered instantly, daily or weekly.</td></tr>
+          <tr><td><strong>Saved deals</strong></td><td>Bookmark deals; get a push when a saved deal is about to expire or goes LOOT.</td></tr>
+          <tr><td><strong>Search</strong></td><td>Full search with autocomplete; sort by hot, new, discount or price; coupon-only filter.</td></tr>
+          <tr><td><strong>Reports</strong></td><td>Flag spam, expired, duplicate, misleading or inappropriate content for admin review.</td></tr>
+          <tr><td><strong>SEO landing pages</strong></td><td>Generated from live data: store, category, store × category, “under ₹X”, expiring today, sale events, freebies. No templated buying guides.</td></tr>
+          <tr><td><strong>Leaderboard &amp; profiles</strong></td><td>Contributor reputation earned from upvotes on the deals they post.</td></tr>
+        </tbody>
+      </table></div>
+
+      <details>
+        <summary>Built but switched off (feature flags)</summary>
+        <p>To keep focus until the core loop has traction (“no new features until 1,000 daily active users”),
+        these exist in the code but are disabled by default and enabled per environment:</p>
+        <ul>
+          <li><strong>Tier 2 — frozen:</strong> deal requests (“find me a deal on…”), curated collections, price-history charts, product price-watch, referrals, bank-offer pages.</li>
+          <li><strong>Tier 3 — hidden:</strong> “I got it” purchase confirmations, sale-event calendar.</li>
+        </ul>
+        <p>Earlier experiments (forums, a “Picks” points currency, badges, quizzes, daily check-in streaks) were removed from the database entirely.</p>
+      </details>
+
+      <h3>Who does what</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Role</th><th>Can</th></tr></thead>
+        <tbody>
+          <tr><td><code>USER</code></td><td>Browse, submit, vote, comment, save, report, set alerts and price watches.</td></tr>
+          <tr><td><code>ADMIN</code></td><td>Everything above, plus the moderation queue, scraper review queue, reports, stores, categories, collections, deal-of-the-day, analytics and exports.</td></tr>
+          <tr><td><code>SUPERADMIN</code></td><td>Everything above, plus managing users and admins.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 3. Core flow ───────────────────────── -->
+    <section id="flow">
+      <h2><span class="num">3</span>The core flow</h2>
+      <p class="intro">SnatchPicks is a loop: deals come in, get checked, get ranked by the community, and get pushed to the people who want them. Every click out feeds the affiliate model that funds the loop.</p>
+
+      <ol class="loop">
+        <li><span class="icon">🔎</span><h4>Found</h4><p>A shopper spots a deal, or a partner feed surfaces one.</p></li>
+        <li><span class="icon">📝</span><h4>Posted</h4><p>Submitted on web or app, or imported by the scraper.</p></li>
+        <li><span class="icon">🛡️</span><h4>Checked</h4><p>Safety, duplicate, fake-MRP and AI checks, plus human review when unsure.</p></li>
+        <li><span class="icon">✅</span><h4>Live</h4><p>Appears in feeds, search and store/category pages.</p></li>
+        <li><span class="icon">🗳️</span><h4>Judged</h4><p>The community votes, comments and confirms it still works.</p></li>
+        <li><span class="icon">🔥</span><h4>Ranked</h4><p>The hot score pushes the best fresh deals to the top.</p></li>
+        <li><span class="icon">🔔</span><h4>Delivered</h4><p>Alerts, digests, pushes and Telegram reach interested shoppers.</p></li>
+        <li><span class="icon">🛒</span><h4>Bought</h4><p>The shopper clicks out to the store; affiliate revenue funds the loop, and back to step 1.</p></li>
+      </ol>
+
+      <h3>Three typical journeys</h3>
+      <div class="grid">
+        <div class="card">
+          <h4>🛍️ The shopper</h4>
+          <ol class="steps">
+            <li>Opens the Hot feed or gets a push for an alert.</li>
+            <li>Opens a deal: sees real price, original price, coupon, price history.</li>
+            <li>Saves it, votes, or clicks out to buy.</li>
+            <li>Gets nudged if a saved deal is about to expire.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h4>✍️ The contributor</h4>
+          <ol class="steps">
+            <li>Signs in and submits a deal (up to 3 per hour).</li>
+            <li>Automated checks approve, reject or queue it within seconds.</li>
+            <li>Upvotes raise the deal's rank and the poster's reputation.</li>
+            <li>At milestones (5, 10, 25… upvotes) they get notified.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h4>🧑‍⚖️ The admin</h4>
+          <ol class="steps">
+            <li>Reviews submissions the AI wasn't sure about.</li>
+            <li>Reviews scraped deals, picks a category, approves or rejects.</li>
+            <li>Handles reports, features deals, sets deal of the day.</li>
+            <li>Watches analytics and scraper runs.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 4. Architecture ───────────────────────── -->
+    <section id="architecture">
+      <h2><span class="num">4</span>System architecture</h2>
+      <p class="intro">
+        One Next.js application on Vercel is both the website and the backend API. Every client
+        (browser, native app, extension) talks to it. A single Postgres database is the source of
+        truth. Background work runs as Vercel cron jobs, and deal ingestion runs as a separate
+        Node scraper on GitHub Actions.
+      </p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph Clients
+    BR["🌐 Browser / PWA"]
+    APP["📲 Expo app"]
+    EXT["🧩 Chrome extension"]
+  end
+
+  subgraph Vercel["Vercel"]
+    MW["Middleware<br/>roles · rate limits · Bearer→session"]
+    WEB["apps/web · Next.js 15<br/>pages + REST API"]
+    CRON["8 cron jobs<br/>expire · alerts · digests · hot scores"]
+  end
+
+  subgraph Data["Data"]
+    DB[("Neon Postgres<br/>via Prisma 6")]
+    RD[("Upstash Redis<br/>rate limiting")]
+  end
+
+  subgraph GHA["GitHub Actions"]
+    SCR["packages/scraper<br/>5 feed adapters"]
+  end
+
+  subgraph External["External services"]
+    AI["OpenAI<br/>gpt-4o-mini"]
+    GSB["Google Safe Browsing"]
+    PUSH["Expo Push · Web Push"]
+    MAIL["Resend email"]
+    TG["Telegram Bot API"]
+    FEEDS["Keepa · Flipkart · Myntra<br/>Cuelinks · INRDeals"]
+  end
+
+  BR --> MW
+  APP -->|"Bearer token"| MW
+  EXT --> WEB
+  MW --> WEB
+  MW --> RD
+  CRON --> WEB
+  WEB --> DB
+  WEB --> AI
+  WEB --> GSB
+  WEB --> PUSH
+  WEB --> MAIL
+  WEB --> TG
+  SCR --> FEEDS
+  SCR --> DB
+</pre>
+        <figcaption>Runtime components and who talks to whom</figcaption>
+      </figure>
+
+      <h3>Components</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Component</th><th>Where</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Web app &amp; API</strong></td><td><code>apps/web</code></td><td>~66 pages and ~66 API route handlers (App Router). Renders the site, serves JSON to the app and extension, runs moderation, sends notifications.</td></tr>
+          <tr><td><strong>Middleware</strong></td><td><code>apps/web/src/middleware.ts</code></td><td>Runs on every request at the edge: checks the signed session token for admin areas, applies per-IP rate limits to write endpoints, and converts the mobile app's Bearer token into a normal session.</td></tr>
+          <tr><td><strong>Cron jobs</strong></td><td><code>apps/web/vercel.json</code></td><td>Eight scheduled HTTP endpoints (see <a href="#alerts">Alerts</a>) protected by a shared secret.</td></tr>
+          <tr><td><strong>Database</strong></td><td><code>packages/database</code></td><td>Prisma schema (33 models, 11 enums), versioned migrations and seed data. Shared by web and scraper.</td></tr>
+          <tr><td><strong>Scraper</strong></td><td><code>packages/scraper</code></td><td>Pulls offers from partner/affiliate feeds into a review queue. Runs on GitHub Actions.</td></tr>
+          <tr><td><strong>Native app</strong></td><td><code>apps/mobile</code></td><td>Expo / React Native client. Standalone install (React 18) so it doesn't clash with the web app's React 19.</td></tr>
+          <tr><td><strong>Extension</strong></td><td><code>apps/extension</code></td><td>Chrome MV3 content script + popup for 19 Indian (and South-Asian) retailer sites.</td></tr>
+          <tr><td><strong>Marketing page</strong></td><td><code>apps/marketing</code></td><td>Static single-file landing page deployed separately.</td></tr>
+          <tr><td><strong>Shared config</strong></td><td><code>packages/config</code></td><td>Shared TypeScript, ESLint and Tailwind presets.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Design decisions worth knowing</h3>
+      <ul>
+        <li><strong>One backend.</strong> The website <em>is</em> the API. The native app and extension are thin clients, so business rules live in one place.</li>
+        <li><strong>JWT sessions + edge checks.</strong> Admin access is enforced centrally in middleware from the signed token (no DB hit), and again in each admin route.</li>
+        <li><strong>Mobile uses a Bearer token, not cookies.</strong> Cookies from an in-app browser aren't visible to native requests, so the app receives the session token once and sends it as a header (see <a href="#clients">Apps</a>).</li>
+        <li><strong>Scraped deals never go live automatically.</strong> They land in a review queue; a human picks the category and approves.</li>
+        <li><strong>Data-driven SEO only.</strong> About 6,000 templated “Best X in India” pages were deliberately removed; SEO now comes from real deal, store, category and intent pages generated from the database.</li>
+        <li><strong>India first.</strong> The schema can represent other South-Asian countries, but no feature assumes multi-country support yet.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 5. Lifecycle ───────────────────────── -->
+    <section id="lifecycle">
+      <h2><span class="num">5</span>Deal lifecycle</h2>
+      <p class="intro">Deals enter through two doors, user submissions and the scraper, and both end up as the same <code>Deal</code> record in the public feed.</p>
+
+      <h3>States a deal moves through</h3>
+      <figure class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> PENDING: submitted
+  PENDING --> ACTIVE: AI approves or admin approves
+  PENDING --> REJECTED: unsafe, duplicate, spam or admin rejects
+  ACTIVE --> EXPIRED: expiry time passed
+  ACTIVE --> EXPIRED: community says expired
+  ACTIVE --> EXPIRED: admin force-expires
+  EXPIRED --> [*]
+  REJECTED --> [*]
+</pre>
+        <figcaption><code>DealStatus</code>: PENDING · ACTIVE · EXPIRED · REJECTED (plus FRONTPAGE, treated as live)</figcaption>
+      </figure>
+
+      <h3>Door 1 — user submission &amp; automated moderation</h3>
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart TD
+  S["User submits a deal<br/>POST /api/deals"] --> G{{"Signed in, not banned,<br/>max 3 deals per hour?"}}
+  G -->|no| X["Refused"]
+  G -->|yes| P["Saved as PENDING<br/>+ first price-history point"]
+  P --> M1{{"1 · URL safe?<br/>Google Safe Browsing"}}
+  M1 -->|malicious| R["AUTO_REJECTED → REJECTED"]
+  M1 -->|ok| M2{{"2 · Already posted?<br/>URL without tracking params"}}
+  M2 -->|duplicate| R
+  M2 -->|new| M3{{"3 · Price sane?<br/>fake-MRP detector"}}
+  M3 -->|suspicious| Q["NEEDS_REVIEW<br/>admin queue"]
+  M3 -->|ok| M4{{"4 · AI content check<br/>gpt-4o-mini"}}
+  M4 -->|"legit, confidence ≥ 0.82"| A["AUTO_APPROVED → ACTIVE"]
+  M4 -->|"spam or malicious, ≥ 0.82"| R
+  M4 -->|unclear| Q
+  Q -->|approve| A2["ADMIN_APPROVED → ACTIVE"]
+  Q -->|reject| R2["ADMIN_REJECTED → REJECTED"]
+</pre>
+        <figcaption>Moderation runs right after the deal is saved; the result is returned to the submitter</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Check</th><th>Rule</th><th>Outcome on failure</th></tr></thead>
+        <tbody>
+          <tr><td>URL safety</td><td>Google Safe Browsing: malware, phishing, unwanted software.</td><td>Auto-reject</td></tr>
+          <tr><td>Duplicate</td><td>Same store URL (ignoring <code>utm_*</code>, <code>ref</code>, <code>tag</code>, <code>aff</code>) already live or pending.</td><td>Auto-reject</td></tr>
+          <tr><td>Price sanity</td><td>Negative price · deal price above original · discount over 99% · original over 5× the price on items under ₹10,000 (MRP inflation) · over 90% off on items under ₹50,000.</td><td>Human review</td></tr>
+          <tr><td>AI check</td><td><code>gpt-4o-mini</code> classifies title, description and URL as legit / spam / malicious / unclear with a confidence score. Auto-decision only at ≥ 0.82.</td><td>Reject, or human review if unsure</td></tr>
+        </tbody>
+      </table></div>
+      <p>The AI also writes a short <code>aiSummary</code> shown on the deal page.</p>
+
+      <h3>Door 2 — scraper ingestion &amp; admin review</h3>
+      <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant GA as GitHub Actions
+  participant S as Scraper
+  participant F as Partner feeds
+  participant DB as Postgres
+  participant AD as Admin at /admin/scraper
+  participant W as Public feed
+  GA->>S: Start run (all sources or one)
+  loop amazon, flipkart, myntra, cuelinks, inrdeals
+    S->>F: Fetch offers (skipped if no API key)
+    F-->>S: Raw offers
+    S->>S: Normalize prices, sanity-check, skip URLs already live
+    S->>DB: Upsert ScrapedDeal as PENDING_REVIEW
+    S->>DB: Record ScraperRun with found and new counts
+  end
+  AD->>DB: Open review queue
+  alt Approve with a category
+    AD->>DB: Create verified ACTIVE Deal and price point
+    DB-->>W: Deal appears in feeds
+  else Reject
+    AD->>DB: Mark ScrapedDeal REJECTED
+  end
+</pre>
+        <figcaption>Scraped offers always pass through a human before going live</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Adapter</th><th>Source</th><th>What it pulls</th></tr></thead>
+        <tbody>
+          <tr><td><code>amazon</code></td><td>Keepa deals API (Amazon.in)</td><td>Top 50 price drops of 20%+; prices converted from paise; affiliate tag appended.</td></tr>
+          <tr><td><code>flipkart</code></td><td>Flipkart Affiliate API</td><td>Top 80 items from the “best offers” feed.</td></tr>
+          <tr><td><code>myntra</code></td><td>Myntra affiliate JSON feed</td><td>Up to 80 products.</td></tr>
+          <tr><td><code>cuelinks</code></td><td>Cuelinks Offers API</td><td>Up to 100 affiliate offers across merchants.</td></tr>
+          <tr><td><code>inrdeals</code></td><td>INRDeals Deal Feed API</td><td>Up to 100 affiliate deals across merchants.</td></tr>
+        </tbody>
+      </table></div>
+      <p>
+        Every adapter shares the same safeguards: HTTP retries with exponential backoff on rate limits
+        and server errors, a price ceiling to catch mis-parsed values, original prices kept only when
+        they're actually higher than the deal price, and de-duplication by <code>(source, externalId)</code>
+        and against URLs that are already live. Re-running updates prices on existing queue items instead of
+        creating duplicates.
+      </p>
+    </section>
+
+    <!-- ───────────────────────── 6. Ranking ───────────────────────── -->
+    <section id="ranking">
+      <h2><span class="num">6</span>Ranking &amp; community trust</h2>
+      <p class="intro">The Hot feed rewards deals that collect votes quickly and lets them fade with age, so fresh, genuinely good deals rise to the top.</p>
+
+      <div class="callout">
+        <strong>Hot score</strong>
+        <code>hotScore = (upvotes − downvotes) / (ageInHours + 2)<sup>1.5</sup></code><br>
+        Updated on every vote and recomputed for all live deals every hour.
+      </div>
+
+      <div class="grid">
+        <div class="card"><span class="icon">💥</span><h4>LOOT</h4><p>hot score &gt; 5. Users who saved the deal get a “just went LOOT” push when it crosses 2.</p></div>
+        <div class="card"><span class="icon">🔥</span><h4>HOT</h4><p>hot score &gt; 2</p></div>
+        <div class="card"><span class="icon">☀️</span><h4>WARM</h4><p>hot score &gt; 0.5</p></div>
+        <div class="card"><span class="icon">✈️</span><h4>Telegram</h4><p>Auto-posted to the channel the first time its hot score reaches 10.</p></div>
+      </div>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart TD
+  V["👍 / 👎 vote<br/>one per user per deal"] --> C["Recount up and down votes"]
+  C --> H["Recompute hot score"]
+  C --> REP["Poster reputation<br/>+1 per up, −1 per down"]
+  H --> B{{"Badge"}}
+  B -->|"> 5"| L["LOOT"]
+  B -->|"> 2"| HOT["HOT"]
+  B -->|"> 0.5"| WARM["WARM"]
+  H --> T{{"Crossed 10<br/>for the first time?"}}
+  T -->|yes| TG["Post to Telegram channel"]
+  SV["✔️ WORKING / ❌ EXPIRED vote"] --> E{{"≥ 10 expired and<br/>≥ 2× working?"}}
+  E -->|yes| EX["Deal marked EXPIRED"]
+</pre>
+        <figcaption>How a single vote ripples through ranking, reputation and distribution</figcaption>
+      </figure>
+
+      <h3>Trust signals on a deal</h3>
+      <ul>
+        <li><strong>Verified</strong>: deals an admin approves from the scraper review queue are marked verified.</li>
+        <li><strong>Honest pricing</strong>: the discount badge is withheld when the claimed discount looks implausible (≥ 80%).</li>
+        <li><strong>Price history</strong>: every price change is recorded, so “all-time low” claims can be checked.</li>
+        <li><strong>Still working?</strong>: live WORKING vs EXPIRED counts, plus coupon-verified counts.</li>
+        <li><strong>Reputation</strong>: contributors build reputation from upvotes (and referrals), shown on the leaderboard.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 7. Alerts ───────────────────────── -->
+    <section id="alerts">
+      <h2><span class="num">7</span>Alerts &amp; notifications</h2>
+      <p class="intro">Users describe what they want once; scheduled jobs watch new deals and reach them on the channel that fits.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  participant U as Shopper
+  participant C as Web or app
+  participant API as Next.js API
+  participant DB as Postgres
+  participant CR as Vercel cron
+  participant N as Expo Push, Web Push, Resend
+  U->>C: Create alert (keyword, category, store, min discount, frequency)
+  C->>API: POST /api/alerts
+  API->>DB: Save DealAlert
+  C->>API: Register device push token
+  API->>DB: Save PushToken
+  CR->>API: send-alerts, every 30 min
+  API->>DB: Live deals from the last 31 min and active alerts
+  API->>API: Match each deal against each alert
+  API->>N: Pushes in batches of 100, one email per user
+  N-->>U: New deal matching your alert
+</pre>
+        <figcaption>Instant alerts; daily and weekly alerts are bundled into digests</figcaption>
+      </figure>
+
+      <h3>Scheduled jobs</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Job</th><th>Runs (UTC)</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>expire-deals</code></td><td>every 15 min</td><td>Marks live deals past their expiry time as EXPIRED.</td></tr>
+          <tr><td><code>send-alerts</code></td><td>every 30 min</td><td>Matches new deals to alerts; sends push + email.</td></tr>
+          <tr><td><code>expiry-alerts</code></td><td>every 30 min</td><td>Warns users whose saved deals expire within 2 hours.</td></tr>
+          <tr><td><code>price-watch-check</code></td><td>hourly</td><td>Notifies when a watched product hits the target price (one-shot).</td></tr>
+          <tr><td><code>recalc-hotscores</code></td><td>hourly</td><td>Recomputes hot scores; sends “just went LOOT” pushes.</td></tr>
+          <tr><td><code>daily-digest</code></td><td>daily 08:00</td><td>Top deals of the last 24 h, personalised to each user's alerts; plus a “Deal of the Day” web push.</td></tr>
+          <tr><td><code>weekly-digest</code></td><td>Mondays 09:00</td><td>Top 10 deals of the week by email.</td></tr>
+          <tr><td><code>sale-event-alerts</code></td><td>daily 08:00</td><td>Reminds subscribers about big sale events starting within a day.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Channels</h3>
+      <div class="grid">
+        <div class="card"><span class="icon">📲</span><h4>Expo Push</h4><p>Native app notifications; tapping one opens the deal.</p></div>
+        <div class="card"><span class="icon">🖥️</span><h4>Web Push</h4><p>Browser notifications via VAPID for PWA users.</p></div>
+        <div class="card"><span class="icon">✉️</span><h4>Email (Resend)</h4><p>Alert emails and daily/weekly digests.</p></div>
+        <div class="card"><span class="icon">🔔</span><h4>In-app inbox</h4><p>Price drops, comment replies, deal milestones, fulfilled requests.</p></div>
+        <div class="card"><span class="icon">✈️</span><h4>Telegram</h4><p>Channel posts for hot deals; bot commands for browsing.</p></div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 8. Data model ───────────────────────── -->
+    <section id="data">
+      <h2><span class="num">8</span>Data model</h2>
+      <p class="intro">PostgreSQL (Neon) accessed through Prisma. 33 models and 11 enums; the core entities and their relationships are below.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+erDiagram
+  direction LR
+  User {
+    string email
+    enum role "USER, ADMIN, SUPERADMIN"
+    int reputation
+  }
+  Deal {
+    string slug
+    float price
+    float originalPrice
+    enum status "PENDING, ACTIVE, EXPIRED, REJECTED"
+    enum moderationStatus
+    float hotScore
+    datetime expiresAt
+  }
+  ScrapedDeal {
+    string source
+    string externalId
+    enum status "PENDING_REVIEW, APPROVED, REJECTED"
+  }
+  DealAlert {
+    string keyword
+    float minDiscount
+    enum frequency "INSTANT, DAILY, WEEKLY"
+  }
+  User ||--o{ Deal : posts
+  Category ||--o{ Deal : groups
+  Store |o--o{ Deal : sells
+  User ||--o{ Vote : casts
+  Deal ||--o{ Vote : receives
+  Deal ||--o{ DealStatusVote : "working / expired"
+  Deal ||--o{ Comment : has
+  Comment |o--o{ Comment : "replies to"
+  Deal ||--o{ PriceHistory : tracks
+  User ||--o{ SavedDeal : saves
+  Deal ||--o{ SavedDeal : in
+  User ||--o{ DealAlert : sets
+  Category |o--o{ DealAlert : filters
+  Store |o--o{ DealAlert : filters
+  User ||--o{ PushToken : registers
+  Deal |o--o{ ScrapedDeal : "approved into"
+</pre>
+        <figcaption>Core entities (simplified; auth, gamification and catalogue extras omitted)</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Domain</th><th>Models</th></tr></thead>
+        <tbody>
+          <tr><td>Users &amp; auth</td><td><code>User</code>, <code>Account</code>, <code>Session</code>, <code>VerificationToken</code></td></tr>
+          <tr><td>Catalogue</td><td><code>Category</code>, <code>Store</code> (with cashback rate, scraper toggle), <code>BankOffer</code>, <code>Tag</code>, <code>SaleEvent</code></td></tr>
+          <tr><td>Deals</td><td><code>Deal</code>, <code>DealTag</code>, <code>PriceHistory</code>, <code>Collection</code>, <code>CollectionDeal</code></td></tr>
+          <tr><td>Community</td><td><code>Vote</code>, <code>DealStatusVote</code>, <code>Comment</code>, <code>CommentLike</code>, <code>Report</code>, <code>PurchaseConfirmation</code>, <code>DealRequest</code>, <code>DealRequestUpvote</code></td></tr>
+          <tr><td>Personal</td><td><code>SavedDeal</code>, <code>DealAlert</code>, <code>ProductWatch</code>, <code>SearchLog</code></td></tr>
+          <tr><td>Notifications</td><td><code>PushToken</code>, <code>WebPushSubscription</code>, <code>InAppNotification</code></td></tr>
+          <tr><td>Referrals</td><td><code>UserReferral</code>, <code>ReferralCode</code> (community-shared store referral codes)</td></tr>
+          <tr><td>Ingestion</td><td><code>ScrapedDeal</code> (review queue), <code>ScraperRun</code> (run log)</td></tr>
+        </tbody>
+      </table></div>
+
+      <details>
+        <summary>Key enums</summary>
+        <div class="table-wrap"><table>
+          <tbody>
+            <tr><th>DealStatus</th><td>PENDING · ACTIVE · EXPIRED · REJECTED · FRONTPAGE</td></tr>
+            <tr><th>ModerationStatus</th><td>PENDING · AUTO_APPROVED · AUTO_REJECTED · NEEDS_REVIEW · ADMIN_APPROVED · ADMIN_REJECTED</td></tr>
+            <tr><th>VoteType</th><td>UP · DOWN</td></tr>
+            <tr><th>DealStatusVoteType</th><td>WORKING · EXPIRED</td></tr>
+            <tr><th>AlertFrequency</th><td>INSTANT · DAILY · WEEKLY</td></tr>
+            <tr><th>ScrapedDealStatus</th><td>PENDING_REVIEW · APPROVED · REJECTED · DUPLICATE</td></tr>
+            <tr><th>ReportReason</th><td>SPAM · EXPIRED · DUPLICATE · MISLEADING · INAPPROPRIATE · OTHER</td></tr>
+            <tr><th>UserRole</th><td>USER · ADMIN · SUPERADMIN</td></tr>
+            <tr><th>Country</th><td>IN (active) · PK · BD · LK · NP · ALL (reserved)</td></tr>
+          </tbody>
+        </table></div>
+      </details>
+
+      <p>
+        Schema changes go through versioned Prisma migrations (5 so far); CI fails the build if the
+        schema and the migration history drift apart. The seed creates 11 categories (beauty &amp; health,
+        fashion, baby &amp; kids, electronics, …) and 12 Indian stores, three of which are scraper-enabled
+        (Amazon India, Flipkart, Myntra).
+      </p>
+    </section>
+
+    <!-- ───────────────────────── 9. Clients ───────────────────────── -->
+    <section id="clients">
+      <h2><span class="num">9</span>Apps &amp; clients</h2>
+
+      <h3>Web app — page map</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Area</th><th>Routes</th></tr></thead>
+        <tbody>
+          <tr><td>Feeds</td><td><code>/</code>, <code>/deals/top</code>, <code>/deals/today</code>, <code>/deals/new</code>, <code>/deals/price-drops</code>, <code>/deals/expiring-soon</code>, <code>/deals/freebies</code>, <code>/deals/best-of-month</code>, <code>/expiring-today</code></td></tr>
+          <tr><td>Deal</td><td><code>/deals/[slug]</code> (with structured product/offer data for search engines)</td></tr>
+          <tr><td>Discovery &amp; SEO</td><td><code>/search</code>, <code>/categories/[slug]</code>, <code>/stores/[slug]</code>, <code>/stores/[slug]/[category]</code>, <code>/under/[price]</code>, <code>/deals/under/[budget]</code>, <code>/sales/[slug]</code>, <code>/coupons</code>, vertical pages (student, grocery, gaming, gift cards…), <code>/rss.xml</code>, sitemap</td></tr>
+          <tr><td>Contribute</td><td><code>/submit</code>, <code>/deals/[slug]/edit</code>, <code>/requests</code>, <code>/leaderboard</code>, <code>/users/[id]</code></td></tr>
+          <tr><td>Personal</td><td><code>/login</code>, <code>/register</code>, <code>/profile</code>, <code>/alerts</code>, <code>/saved</code>, <code>/watchlist</code>, <code>/notifications</code></td></tr>
+          <tr><td>Admin</td><td><code>/admin</code>, <code>/admin/scraper</code>, <code>/admin/reports</code>, <code>/admin/stores</code>, <code>/admin/categories</code>, <code>/admin/collections</code>, <code>/admin/users</code>, <code>/admin/analytics</code>, <code>/admin/watchlist</code></td></tr>
+          <tr><td>Info</td><td><code>/about</code>, <code>/guidelines</code>, <code>/telegram</code>, <code>/privacy</code>, <code>/terms</code>, <code>/contact</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Native app (Expo)</h3>
+      <div class="grid">
+        <div class="card"><span class="icon">📈</span><h4>Deals</h4><p>Hot / New / Top / Discussed / Fresh tabs, category pills, a “flash” strip of deals expiring within 6 h, one-tap vote, save and coupon copy.</p></div>
+        <div class="card"><span class="icon">🔍</span><h4>Search</h4><p>Debounced search with sort options, coupon filter and recent searches.</p></div>
+        <div class="card"><span class="icon">➕</span><h4>Post</h4><p>Opens the web submit form in an in-app sheet, so there's a single submission flow.</p></div>
+        <div class="card"><span class="icon">🔔</span><h4>Alerts</h4><p>Manage alerts, with one-tap templates (phones, headphones, laptops, 70%+ off…).</p></div>
+        <div class="card"><span class="icon">👤</span><h4>Profile</h4><p>Sign in and out, account details, and saved deals.</p></div>
+        <div class="card"><span class="icon">🏷️</span><h4>Deal detail</h4><p>Price sparkline, coupon, bank offer, cashback, comments and replies, “still working?” votes, share.</p></div>
+      </div>
+
+      <h4>How the app signs in</h4>
+      <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  participant App as Expo app
+  participant B as In-app browser
+  participant W as SnatchPicks web
+  participant MW as Middleware
+  App->>B: Open /api/mobile/auth with redirect and random state
+  B->>W: User signs in (Google or email and password)
+  W-->>B: Redirect to snatchpicks://auth with token and state
+  B-->>App: Token returned to the app
+  App->>App: Verify state, store token in SecureStore
+  App->>MW: API request with Authorization Bearer token
+  MW->>W: Converted to a normal session, auth works unchanged
+</pre>
+        <figcaption>Only the app's own URL scheme is allowed as a redirect target</figcaption>
+      </figure>
+
+      <h3>Browser extension</h3>
+      <ul>
+        <li>Detects product pages on 19 retailer sites (Amazon.in, Flipkart, Myntra, Ajio, Nykaa, Meesho, Croma, Tata CLiQ, JioMart, BigBasket and more).</li>
+        <li>Shows a badge with the SnatchPicks discount or available cashback; the popup shows price, price history (with an “all-time low” marker), bank offer and coupon.</li>
+        <li>At checkout it shows a coupon panel: “Try” fills and applies the code, “Copy” copies it.</li>
+        <li>Lets signed-in users set a price alert, or submit the current product as a new deal.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 10. Platform ───────────────────────── -->
+    <section id="platform">
+      <h2><span class="num">10</span>Platform &amp; DevOps</h2>
+
+      <h3>Repository layout</h3>
+<pre class="card" style="overflow-x:auto;font-family:var(--mono);font-size:.85rem;margin:1rem 0">snatchpicks/                 Turborepo · npm workspaces
+├── apps/
+│   ├── web/                 Next.js 15 site + API + cron handlers   (workspace)
+│   ├── mobile/              Expo SDK 51 app                         (standalone)
+│   ├── extension/           Chrome MV3 extension                    (plain JS)
+│   └── marketing/           Static landing page                     (plain HTML)
+├── packages/
+│   ├── database/            Prisma schema, migrations, seed
+│   ├── scraper/             Feed adapters + runner
+│   └── config/              Shared TS / ESLint / Tailwind presets
+├── scripts/                 CI guard scripts
+└── .github/workflows/       ci.yml · scraper.yml</pre>
+
+      <h3>Pipeline</h3>
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  DEV["Commit"] --> HOOK["Pre-commit<br/>Prettier + ESLint"]
+  HOOK --> PR["Push / PR to main"]
+  PR --> CI
+  subgraph CI["GitHub Actions · CI"]
+    direction TB
+    I["npm ci + prisma generate"] --> TC["Type-check all workspaces"]
+    TC --> PV["Validate schema"]
+    PV --> DR["Migration drift check<br/>against a Postgres 16 container"]
+    DR --> AG["Admin-guard check<br/>every admin route must authorize"]
+    AG --> T["Vitest tests"]
+    T --> LI["Lint"]
+  end
+  PR --> VC["Vercel build<br/>turbo build of apps/web"]
+  VC --> LIVE["Production"]
+  DISPATCH["Manual dispatch<br/>or 30-min schedule"] --> SJ["GitHub Actions · Scraper"]
+  SJ --> DBX[("Postgres")]
+</pre>
+        <figcaption>Quality gates before every merge; the scraper runs as its own workflow</figcaption>
+      </figure>
+
+      <h3>Operations &amp; safeguards</h3>
+      <div class="grid">
+        <div class="card"><span class="icon">🩺</span><h4>Observability</h4><p>Sentry in the web app (server, edge, client) and in the scraper; every cron job reports failures.</p></div>
+        <div class="card"><span class="icon">🚦</span><h4>Rate limiting</h4><p>Upstash Redis sliding windows per IP on write endpoints (votes, comments, submissions, saves, requests), plus per-user submission caps.</p></div>
+        <div class="card"><span class="icon">🔐</span><h4>Security headers</h4><p>Content-Security-Policy, HSTS, frame denial, strict referrer and permissions policies on every response.</p></div>
+        <div class="card"><span class="icon">✅</span><h4>Config validation</h4><p>Environment configuration is validated with Zod at startup, so a bad deploy fails fast.</p></div>
+        <div class="card"><span class="icon">🧭</span><h4>SEO hygiene</h4><p>Sitemap and footer generated from the filesystem and database; legacy templated paths are marked <code>noindex</code>.</p></div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 11. Stack ───────────────────────── -->
+    <section id="stack">
+      <h2><span class="num">11</span>Tech stack</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Layer</th><th>Choice</th></tr></thead>
+        <tbody>
+          <tr><td>Monorepo</td><td>Turborepo 2, npm 10 workspaces, Node ≥ 20, TypeScript 5</td></tr>
+          <tr><td>Web</td><td>Next.js 15 (App Router), React 19, Tailwind CSS 4</td></tr>
+          <tr><td>Auth</td><td>NextAuth v5 (JWT sessions; Google + email/password)</td></tr>
+          <tr><td>Database</td><td>PostgreSQL on Neon, Prisma 6</td></tr>
+          <tr><td>Rate limiting</td><td>Upstash Redis (<code>@upstash/ratelimit</code>)</td></tr>
+          <tr><td>Validation</td><td>Zod</td></tr>
+          <tr><td>Moderation</td><td>OpenAI <code>gpt-4o-mini</code>, Google Safe Browsing</td></tr>
+          <tr><td>Notifications</td><td>Expo Push, Web Push (VAPID), Resend email, Telegram Bot API</td></tr>
+          <tr><td>Images</td><td>Cloudinary</td></tr>
+          <tr><td>Mobile</td><td>Expo SDK 51, React Native 0.74, Expo Router 3, TanStack Query 5, NativeWind 4, EAS Build</td></tr>
+          <tr><td>Extension</td><td>Chrome Manifest V3 (vanilla JS)</td></tr>
+          <tr><td>Scraper</td><td>Node + TypeScript (<code>tsx</code>), axios; Keepa, Flipkart Affiliate, Myntra, Cuelinks, INRDeals</td></tr>
+          <tr><td>Hosting &amp; jobs</td><td>Vercel (web + cron), GitHub Actions (CI + scraper)</td></tr>
+          <tr><td>Quality</td><td>Vitest, ESLint, Prettier, Husky + lint-staged, Sentry</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 12. Status ───────────────────────── -->
+    <section id="status">
+      <h2><span class="num">12</span>Status &amp; roadmap</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Area</th><th>Where it stands</th></tr></thead>
+        <tbody>
+          <tr><td>Web app</td><td>✅ Deployed on Vercel with the full core loop: feeds, submission + moderation, voting, comments, alerts, admin.</td></tr>
+          <tr><td>Native app</td><td>🟡 Runs against the live API (sign-in, votes, saves, comments, alerts). Store release and polish in progress.</td></tr>
+          <tr><td>Scraper</td><td>🟡 Five adapters built and tested; the 30-minute schedule is paused until partner-feed API keys are configured.</td></tr>
+          <tr><td>Extension</td><td>🟡 Built (v1.1.0) and loadable in Chrome; store distribution not set up yet.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Next up</h3>
+      <ul>
+        <li><strong>Fix Amazon/Keepa original-price parsing</strong> so “was” prices from Keepa are reliable.</li>
+        <li><strong>Gen-Z, mobile-first PWA redesign</strong> of the web app, including slimming down the homepage.</li>
+        <li><strong>Polish and ship the native app</strong> as a thin client to the App Store and Play Store.</li>
+        <li><strong>Instagram + Telegram distribution pipeline</strong>: auto-post approved deals to both channels.</li>
+        <li><strong>Turn the scraper schedule back on</strong> once a partner-feed key is in place.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 13. Glossary ───────────────────────── -->
+    <section id="glossary">
+      <h2><span class="num">13</span>Glossary</h2>
+      <div class="table-wrap"><table>
+        <tbody>
+          <tr><th>MRP</th><td>Maximum Retail Price, the printed list price in India. Inflated MRPs are the most common way deal listings fake big discounts.</td></tr>
+          <tr><th>Hot score</th><td>Net votes divided by an age-decay factor; drives the Hot feed.</td></tr>
+          <tr><th>LOOT / HOT / WARM</th><td>Badges for hot scores above 5, 2 and 0.5.</td></tr>
+          <tr><th>YMMV</th><td>“Your mileage may vary”: the deal may not work for everyone (location, account, card).</td></tr>
+          <tr><th>Status vote</th><td>A WORKING / EXPIRED vote, separate from 👍/👎, used to retire dead deals.</td></tr>
+          <tr><th>ScrapedDeal</th><td>An offer pulled from a partner feed, waiting in the admin review queue.</td></tr>
+          <tr><th>Bank offer</th><td>Extra instant discount for paying with a specific bank's card.</td></tr>
+          <tr><th>Stacking</th><td>Combining a deal with a coupon, bank offer and cashback for the lowest final price.</td></tr>
+          <tr><th>Affiliate-only store</th><td>A store linked with affiliate tracking but not scraped (e.g. Nykaa, Meesho).</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <footer>
+      Generated from the SnatchPicks source (commit <code>63f0226e</code>, November 2026).
+      Diagrams are rendered with Mermaid. Numbers and rules on this page reflect the code at that commit.
+    </footer>
+  </main>
+</div>
+</body>
+</html>
