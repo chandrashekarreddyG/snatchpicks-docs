@@ -11,6 +11,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
   <link rel="stylesheet" href="assets/style.css">
   <script type="module" src="assets/site.js"></script>
+  <script type="module" src="assets/flows.js"></script>
 </head>
 <body>
 <div class="layout">
@@ -137,6 +138,12 @@
         <li><span class="icon">🛒</span><h4>Bought</h4><p>The shopper clicks out to the store; affiliate revenue funds the loop, and back to step 1.</p></li>
       </ol>
 
+      <h3>Follow one deal, from spotted to sold</h3>
+      <p class="intro">Press play, or click any stop, to watch an example deal move through SnatchPicks. The deal card changes as each part of the system acts on it.</p>
+      <div class="journey" data-journey>
+        <noscript><p>Enable JavaScript to see the interactive walkthrough.</p></noscript>
+      </div>
+
       <h3>Three typical journeys</h3>
       <div class="grid">
         <div class="card">
@@ -179,6 +186,17 @@
         Node scraper on GitHub Actions.
       </p>
 
+      <h3>Trace a request</h3>
+      <p class="intro">Choose a scenario and watch it hop between components. The current hop is explained above the map, and every hop is listed below it.</p>
+      <div class="tracer" data-tracer>
+        <noscript><p>Enable JavaScript to see the interactive map; the static diagram is below.</p></noscript>
+      </div>
+      <div class="legend">
+        <span class="lg g-client">Clients</span><span class="lg g-vercel">Vercel</span><span class="lg g-data">Data</span><span class="lg g-jobs">Jobs</span><span class="lg g-ext">External services</span>
+      </div>
+
+      <details>
+        <summary>Static architecture diagram</summary>
       <figure class="diagram">
 <pre class="mermaid">
 flowchart LR
@@ -229,6 +247,7 @@ flowchart LR
 </pre>
         <figcaption>Runtime components and who talks to whom</figcaption>
       </figure>
+      </details>
 
       <h3>Components</h3>
       <div class="table-wrap"><table>

@@ -2,7 +2,7 @@ import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.mi
 
 const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 mermaid.initialize({
-  startOnLoad: true,
+  startOnLoad: false,
   theme: dark ? "dark" : "base",
   themeVariables: dark
     ? {}
@@ -18,6 +18,16 @@ mermaid.initialize({
   flowchart: { htmlLabels: true, curve: "basis" },
   securityLevel: "strict",
 });
+
+// Diagrams inside a closed <details> can't be measured, so render them when opened.
+const hidden = (pre) => pre.closest("details:not([open])");
+await mermaid.run({ nodes: [...document.querySelectorAll("pre.mermaid")].filter((pre) => !hidden(pre)) });
+for (const details of document.querySelectorAll("details")) {
+  details.addEventListener("toggle", () => {
+    const pending = [...details.querySelectorAll("pre.mermaid:not([data-processed])")];
+    if (details.open && pending.length) mermaid.run({ nodes: pending });
+  });
+}
 
 // Highlight the TOC entry for the section in view.
 const links = new Map(
