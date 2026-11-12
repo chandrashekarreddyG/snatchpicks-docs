@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnatchPicks — Enhancements &amp; Recommendations</title>
+  <meta name="description" content="Proposed enhancements for SnatchPicks: launch blockers, v0 and v1 release plans, recommended architecture changes, scraper and ingestion improvements, and open owner decisions.">
+  <meta property="og:title" content="SnatchPicks — Enhancements &amp; Recommendations">
+  <meta property="og:description" content="Proposed enhancements for SnatchPicks: launch blockers, release plans, architecture changes, deal-supply improvements and open decisions.">
+  <meta name="theme-color" content="#f97316">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
+  <link rel="stylesheet" href="assets/style.css">
+  <script type="module" src="assets/site.js"></script>
+</head>
+<body>
+<div class="layout"><nav class="toc" aria-label="Contents">
+  <a class="brand" href="index.html">Snatch<span>Picks</span></a>
+  <ul class="site-nav">
+    <li><a href="index.html">Overview</a></li>
+    <li><a href="current.html">Current implementation</a></li>
+    <li><a href="architecture.html">Architecture</a></li>
+    <li><a href="recommendations.html" class="active" aria-current="page">Recommendations</a></li>
+  </ul>
+  <ol>
+    <li><a href="#summary">Summary</a></li>
+    <li><a href="#blockers">Launch blockers</a></li>
+    <li><a href="#v0">v0 launch plan</a></li>
+    <li><a href="#roadmap">Iteration roadmap</a></li>
+    <li><a href="#v1">v1 release plan</a></li>
+    <li><a href="#architecture-changes">Architecture changes</a></li>
+    <li><a href="#scale">Scaling path</a></li>
+    <li><a href="#scraper">Scraper &amp; deal supply</a></li>
+    <li><a href="#ingestion">Ingestion pipeline</a></li>
+    <li><a href="#amazon">Amazon worked example</a></li>
+    <li><a href="#slickdeals">Gaps vs Slickdeals</a></li>
+    <li><a href="#decisions">Open decisions</a></li>
+    <li><a href="#docs">Sources &amp; history</a></li>
+  </ol>
+</nav>
+
+<main id="top">
+
+    <!-- ───────────────────────── 1. Summary ───────────────────────── -->
+    <section id="summary">
+      <header class="hero">
+        <div class="eyebrow">Enhancements &amp; recommendations</div>
+        <h1>Fix the loop, <span>then scale it</span></h1>
+        <p class="lead">
+          The SnatchPicks loop works on paper: deals come in, get checked, get ranked by the community and get pushed to alerts.
+          In practice, deal supply is close to zero, a bug rejects normal user submissions as duplicates of themselves, and caching,
+          server location and the lack of a domain layer limit scale. The fixes are incremental: small, independent PRs inside the
+          existing Next.js app. There is no rewrite.
+        </p>
+        <div class="pills">
+          <span class="pill">Proposed · pending owner sign-off</span>
+          <span class="pill">One Next.js app · no rewrite</span>
+          <span class="pill">Small, independent PRs</span>
+        </div>
+      </header>
+
+      <h2><span class="num">1</span>Summary</h2>
+      <p class="intro">The five findings that matter most. Each is expanded in the sections below.</p>
+
+      <div class="grid">
+        <div class="card"><span class="icon">🛒</span><h4>No real deal supply yet</h4><p>The scraper schedule is paused and no feed credentials are configured, so the feed is almost empty.</p></div>
+        <div class="card"><span class="icon">🔁</span><h4>Submissions reject themselves</h4><p>Every normal user submission matches its own pending row as a duplicate, so it is auto-rejected.</p></div>
+        <div class="card"><span class="icon">🌏</span><h4>Far from users, no caching</h4><p>Functions run in US East while users are in India (about 200 ms+ per request, estimate). Pages are not cached; the homepage took 1.7 s to first byte cold.</p></div>
+        <div class="card"><span class="icon">🧱</span><h4>No domain layer or API contract</h4><p>121 files import the database client directly, and API routes return raw database rows.</p></div>
+        <div class="card"><span class="icon">🔔</span><h4>Notifications aren't reliable</h4><p>Side effects run inline with no outbox, so alerts can be lost or doubled. Web Push is broken and capped at 500 subscribers.</p></div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 2. Launch blockers ───────────────────────── -->
+    <section id="blockers">
+      <h2><span class="num">2</span>Launch blockers (v0)</h2>
+      <p class="intro">The v0 plan lists these as blockers, in order. Each is a small PR. Item 0 is done. The source list has 13 entries (0–12).</p>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Item</th><th>Why it matters</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td><strong>Get CI green on <code>main</code></strong></td><td>Gates everything else. CI had failed on the last 11 runs on <code>main</code>; fixed on 2026-11-11 (schema validation, admin-guard check, lint) and green since.</td><td><span class="badge now">Done 2026-11-11</span></td></tr>
+          <tr><td>1</td><td><strong>Domain</strong>: point the canonical domain at production hosting; align site-URL configuration</td><td>The apex domain times out and is not on the web host. SEO and canonical URLs depend on it.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>2</td><td><strong>Scheduled jobs</strong>: confirm the hosting plan supports the cron schedules</td><td>The hobby plan runs crons only once a day. If that applies, sub-daily jobs move to a GitHub Actions schedule.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>3</td><td><strong>Fix the duplicate self-match</strong>: exclude the new deal's own id when checking duplicates; add a regression test</td><td>Every normal submission rejects itself. This is the single biggest contributor blocker.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>4</td><td><strong>Deal page statuses</strong>: pending shows "under review" to the owner only; rejected returns 404; frontpage renders as live; hidden deals expose no metadata</td><td>Today any non-active deal, including frontpage deals, shows "This deal has expired", and hidden deals leak metadata.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>5</td><td><strong>Remove the fabricated <code>aggregateRating</code></strong></td><td>Structured data is derived from the hot score. That contradicts the brand promise "No fake MRP. Ever."</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>6</td><td><strong>Security hardening (details tracked privately)</strong></td><td>Must be addressed before public traffic and before the launch is announced.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>7</td><td><strong>Scraped-deal approval</strong>: wrap in a transaction; guard on <code>PENDING_REVIEW</code>; make the scraped-to-live link unique</td><td>A double-click can create two live deals today.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>8</td><td><strong>Homepage</strong>: feed first; remove 13 unused queries; cache community stats; limit filters to tab and category; one ordering for "Top"</td><td>The page runs 13 queries on every request and is never cached.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>9</td><td><strong>Images</strong>: capture <code>og:image</code> on submit and scrape; serve retailer images through the image pipeline</td><td>None of the 20 live hot deals has an image.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>10</td><td><strong>Supply</strong>: add one affiliate feed credential to the scraper, re-enable its schedule, and give the admin a daily curation target</td><td>Without a feed, the feed stays empty.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>11</td><td><strong>Telegram</strong>: post on approval</td><td>Too few votes exist for the vote-threshold post to ever fire at launch.</td><td><span class="badge planned">Open</span></td></tr>
+          <tr><td>12</td><td><strong>Analytics</strong>: instrument the launch metrics</td><td>Without instrumentation, no release can be judged against its gate.</td><td><span class="badge planned">Open</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <p class="intro">Effort: about 2 weeks for one developer (estimate, not measured).</p>
+    </section>
+
+    <!-- ───────────────────────── 3. v0 launch plan ───────────────────────── -->
+    <section id="v0">
+      <h2><span class="num">3</span>v0 launch plan</h2>
+      <p class="intro">Goal: ship the smallest loop that proves demand, then iterate. Launch is not blocked on a large feature set.</p>
+
+      <h3>Principles</h3>
+      <ol class="steps">
+        <li><strong>Ship one loop.</strong> Deals come in, get verified, get seen, get clicked out. Everything else waits until a metric asks for it.</li>
+        <li><strong>Hide, don't delete.</strong> Feature flags hide surfaces for v0. The code stays and returns when the data justifies it.</li>
+        <li><strong>Hill-climb one bottleneck at a time.</strong> Each release targets the currently worst metric. Releases are gated on metrics, not dates.</li>
+        <li><strong>Small, safe changes.</strong> One issue and one PR per change, CI green before merge, changelog and docs updated in the same PR.</li>
+      </ol>
+
+      <h3>Review of previous design decisions</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Recorded decision</th><th>v0 call</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>India only, INR, <code>en_IN</code></td><td><strong>Keep</strong></td><td>Keeps scope small. The schema already allows expansion later.</td></tr>
+          <tr><td>Niche entry: beauty → fashion → baby</td><td><strong>Keep, and enforce it</strong></td><td>The code has drifted broad: 11 categories and 9 vertical pages. Beauty &amp; Skincare is the default feed, Fashion comes second, and other verticals are hidden from navigation.</td></tr>
+          <tr><td>"Every deal verified. No fake MRP."</td><td><strong>Keep</strong></td><td>Undermined today by the fabricated rating and the duplicate bug. Both are fixed in v0.</td></tr>
+          <tr><td>Launch on all four surfaces (PWA, native app, Instagram, Telegram)</td><td><strong>Change</strong>: v0 = PWA, a Telegram channel, and Instagram posted by hand. Native app ships in v0.2.</td><td>The app has crash-class bugs and unconfigured push, and needs a store review cycle. With zero users it adds no reach.</td></tr>
+          <tr><td>Browser extension</td><td><strong>Change</strong>: defer to v0.4</td><td>It calls the wrong domain and is not published.</td></tr>
+          <tr><td>Two acquisition engines (social plus SEO)</td><td><strong>Keep</strong></td><td>SEO needs the canonical domain live first, which is a v0 blocker.</td></tr>
+          <tr><td>Tier 1 / 2 / 3 feature list</td><td><strong>Keep, and trim Tier 1 further</strong></td><td>Four flags gate nothing. Wire them up or delete them.</td></tr>
+          <tr><td>Google plus email/password sign-up</td><td><strong>Change</strong>: Google sign-up only; existing credential accounts can still sign in</td><td>No password reset or email verification exists. Revisit if sign-up conversion is low; phone OTP is the likely next step.</td></tr>
+          <tr><td>Scraper sources (Keepa, Flipkart, Myntra)</td><td><strong>Change</strong>: one free affiliate feed (Cuelinks or INRDeals) covering Nykaa, Myntra, Purplle and Amazon</td><td>Keepa is paid, and Amazon is not where the niche starts. Keepa parsing (#133) is deferred.</td></tr>
+          <tr><td>Telegram post only when hot score ≥ 10</td><td><strong>Change</strong>: also post when an admin approves a deal</td><td>At launch there are too few votes for the threshold to ever fire.</td></tr>
+          <tr><td>Hot score <code>(up − down)/(age+2)^1.5</code></td><td><strong>Keep for v0</strong></td><td>Vote volume is too low for the formula to matter yet. Revisited with tiers in v0.3.</td></tr>
+          <tr><td>Next.js monolith serving as the API</td><td><strong>Keep through v1</strong></td><td>Split only after a bottleneck is measured.</td></tr>
+          <tr><td>Scheduled jobs on the hosting platform</td><td><strong>Keep, but confirm the plan</strong></td><td>If the hobby plan applies, sub-daily jobs move to a GitHub Actions schedule.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Scope</h3>
+      <div class="grid">
+        <div class="card">
+          <h4>In scope (must work end to end)</h4>
+          <ul>
+            <li><strong>Browse:</strong> Hot and New tabs; category chips (Beauty default, Fashion, All); deal page with price, MRP, discount, coupon, price history.</li>
+            <li><strong>Click out</strong> with the affiliate link, counting clicks.</li>
+            <li><strong>Sign in</strong> with Google (web).</li>
+            <li><strong>Submit</strong> a deal (web), through moderation to live or to the review queue.</li>
+            <li><strong>Community:</strong> up/down votes, working/expired votes, comments, save, report.</li>
+            <li><strong>Email alerts:</strong> keyword or category alerts sent instantly, plus a daily digest.</li>
+            <li><strong>Admin:</strong> moderation queue, scraper queue, reports, stores and categories.</li>
+            <li><strong>SEO:</strong> deal, store and category pages, sitemap, robots file, canonical URLs on the canonical domain.</li>
+            <li><strong>Telegram channel</strong> auto-post on approval.</li>
+            <li><strong>Legal:</strong> affiliate disclosure, privacy policy, terms and guidelines.</li>
+            <li><strong>Ops:</strong> error monitoring, scheduled-job setup, uptime monitor, basic product analytics.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Hidden behind flags (code kept)</h4>
+          <ul>
+            <li>For You feed and the onboarding modal (its logged-in check never passes, so it never shows)</li>
+            <li>Deal requests, collections, price watch and watchlist, referrals, bank offers</li>
+            <li>Sale calendar, purchase confirmation, leaderboard, coupons page</li>
+            <li>Vertical landing pages (finance, gaming, gift cards, hosting, home services, student, grocery, IPL, summer sale)</li>
+            <li>Web Push, Telegram bot commands, pay / city / exclusive filters</li>
+            <li>Native app, browser extension, email/password sign-up</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Launch metrics: what we hill-climb</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Stage</th><th>Metric</th><th>Initial target</th></tr></thead>
+        <tbody>
+          <tr><td>Supply</td><td>Approved niche deals per day</td><td>20 or more</td></tr>
+          <tr><td>Activation</td><td>Visits with at least one click-out</td><td>Baseline in week 1, then improve week over week</td></tr>
+          <tr><td>Retention</td><td>Day-7 return rate; active alert subscribers</td><td>Baseline in week 1</td></tr>
+          <tr><td>Community (north star)</td><td>Share of posts and votes from non-admin users</td><td>Rising every week</td></tr>
+          <tr><td>Trust</td><td>Approved deals reported or community-expired within 24 h</td><td>Under 5%</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 4. Roadmap ───────────────────────── -->
+    <section id="roadmap">
+      <h2><span class="num">4</span>Iteration roadmap</h2>
+      <p class="intro">Releases are gated on metrics, not dates. A release starts only when the gate in its row is met.</p>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Release</th><th>Theme</th><th>Contents</th><th>Gate to start</th></tr></thead>
+        <tbody>
+          <tr><td><strong>v0</strong> <span class="badge now">now</span></td><td>Prove the loop</td><td>The v0 scope above</td><td>—</td></tr>
+          <tr><td><strong>v0.1</strong> <span class="badge planned">planned</span></td><td>Fix what launch data shows, plus speed</td><td>Indexes on deal status, score and expiry; vote, deal-status-vote and alert indexes; cache anonymous pages; lazy-load the price chart; PWA icons and iOS meta</td><td>v0 live</td></tr>
+          <tr><td><strong>v0.2</strong> <span class="badge planned">planned</span></td><td>Retention</td><td>Native app fixes (push tap and cold start, app identifier, per-user vote and save state, crash bugs); PWA install flow; Web Push rebuilt on a standard library with pagination</td><td>Day-7 baseline measured and alerts being used</td></tr>
+          <tr><td><strong>v0.3</strong> <span class="badge planned">planned</span></td><td>Community quality</td><td>Popular and Frontpage tiers; alerts that fire only at a chosen tier; reputation tiers on cards; trusted posters skip the review queue; coupon-verify dedupe; stored vote counters; hot-score revision</td><td>Non-admin posts and votes over 30%</td></tr>
+          <tr><td><strong>v0.4</strong> <span class="badge planned">planned</span></td><td>Growth</td><td>Instagram automation (#146); WhatsApp share; fashion vertical push; publish the extension after the domain fix; Keepa parsing (#133)</td><td>Supply target met consistently</td></tr>
+          <tr><td><strong>v1</strong> <span class="badge target">target</span></td><td>Scale</td><td>Scaling path (section 7) and the v1 release plan (section 5)</td><td>About 10k DAU</td></tr>
+        </tbody>
+      </table></div>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  V0["v0: prove the loop"] -->|"v0 live"| V01["v0.1: fix data and speed"]
+  V01 -->|"Day-7 baseline measured and alerts in use"| V02["v0.2: retention"]
+  V02 -->|"non-admin posts and votes over 30%"| V03["v0.3: community quality"]
+  V03 -->|"supply target met consistently"| V04["v0.4: growth"]
+  V04 -->|"about 10k DAU"| V1["v1: scale"]
+</pre>
+        <figcaption>Release sequence. Each edge is the gate that must be met before the next release starts.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ───────────────────────── 5. v1 ───────────────────────── -->
+    <section id="v1">
+      <h2><span class="num">5</span>v1 release plan</h2>
+      <p class="intro">v1 takes SnatchPicks from "a loop that works" to "a product that holds up at 10k–100k daily users and runs without daily founder curation". It starts only after v0 through v0.4 have shipped and met their gates.</p>
+
+      <h3>What v1 is</h3>
+      <ol class="steps">
+        <li><strong>The community runs the feed.</strong> Most deals and votes come from users. Quality tiers (New → Popular → Frontpage) replace founder curation.</li>
+        <li><strong>Notifications are the product.</strong> Alerts fire on quality (for example, "tell me when it's Popular"), on the channel the user picks, exactly once.</li>
+        <li><strong>It scales without a rewrite.</strong> The monolith stays. Fan-out, counters and caching move to patterns that hold to 100k daily users.</li>
+        <li><strong>A second vertical.</strong> Fashion is fully live on top of beauty.</li>
+        <li><strong>All surfaces are generally available:</strong> web/PWA, native app (Play Store and App Store), Chrome extension and social channels.</li>
+      </ol>
+
+      <h3>Entry gate (all must be true)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Gate</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>v0 → v0.4 shipped</td><td>All roadmap rows done, or explicitly dropped</td></tr>
+          <tr><td>Traffic</td><td>About 10k daily active users, sustained for 4 weeks</td></tr>
+          <tr><td>Community</td><td>At least 30% of posts and votes from non-admin users</td></tr>
+          <tr><td>Supply</td><td>At least 20 approved niche deals per day, sustained for 4 weeks</td></tr>
+          <tr><td>Trust</td><td>Under 5% of approved deals reported or community-expired within 24 h</td></tr>
+        </tbody>
+      </table></div>
+      <p class="intro">If traffic stalls below the gate, do not start v1. Keep hill-climbing the worst v0.x metric instead.</p>
+
+      <h3>Definition of done (v1 GA)</h3>
+      <p class="intro">Initial targets. Re-baseline them with v0.x data before committing.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Area</th><th>Criterion</th></tr></thead>
+        <tbody>
+          <tr><td>Community</td><td>At least 50% of posts and votes from non-admin users; median admin review time under 2 h</td></tr>
+          <tr><td>Quality</td><td>Popular and Frontpage tiers live; under 3% of Frontpage deals reported within 24 h</td></tr>
+          <tr><td>Alerts</td><td>Delivered within 5 min of the trigger; zero duplicate sends (unique delivery key); per-alert channel choice</td></tr>
+          <tr><td>Performance</td><td>Anonymous homepage p95 time to first byte under 300 ms (from cache); feed API p95 under 200 ms; search p95 under 300 ms</td></tr>
+          <tr><td>Reliability</td><td>99.9% monthly uptime; server error rate under 0.5%; every job reports errors and finishes inside its window at 100k subscribers</td></tr>
+          <tr><td>Surfaces</td><td>Native app on Play Store and App Store with parity on browse, submit, alerts and push; extension on the Chrome Web Store</td></tr>
+          <tr><td>Verticals</td><td>Fashion live with its own feed, store pages and supply target (at least 15 approved fashion deals per day)</td></tr>
+          <tr><td>Compliance</td><td>Items in the compliance checklist below reviewed and done</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Product scope</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Theme</th><th>What ships</th></tr></thead>
+        <tbody>
+          <tr><td>Deal tiers</td><td>New → Popular (automatic, score threshold) → Frontpage (editor pick). Tier labels on cards and deal pages; Frontpage feed tab</td></tr>
+          <tr><td>Alerts v2</td><td>Minimum tier per alert; channel per alert (email, push, in-app, Telegram); pause and resume; delivery history; one-tap popular-alert templates</td></tr>
+          <tr><td>Reputation and trust</td><td>Visible reputation tiers on cards; trusted posters skip the AI queue; weighted community flags; coupon verification once per user, weighted by reputation; poster edits on live deals re-moderated</td></tr>
+          <tr><td>Personalization</td><td>Working onboarding (category and store picks saved server-side); For You re-enabled; follow stores and categories; recently viewed</td></tr>
+          <tr><td>Fashion vertical</td><td>Full fashion launch: feed, store × category pages, curated supply, Instagram content. Baby &amp; parenting prepared but not launched</td></tr>
+          <tr><td>Native app GA</td><td>Native submit and alert forms, infinite scroll, offline cache, universal links, Android share-in, haptics</td></tr>
+          <tr><td>Extension GA</td><td>Published on the Chrome Web Store; auto-tries multiple coupons at checkout; price-drop alert from the product page</td></tr>
+          <tr><td>Distribution</td><td>Automated Instagram, Telegram and WhatsApp posting for Frontpage deals (#146)</td></tr>
+          <tr><td>Accounts</td><td>Decided by v0 data: phone OTP or email login with password reset and verification</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Out of v1</h3>
+      <ul>
+        <li>Markets outside India, and non-INR currencies.</li>
+        <li>Points currency, badges, or gamification beyond reputation tiers.</li>
+        <li>In-app forums (use a Telegram or Discord community instead).</li>
+        <li>An in-house cashback program (revisit after v1 with an Indian partner).</li>
+        <li>Templated SEO or buying-guide content (permanently banned).</li>
+        <li>Splitting the monolith beyond the notification and scraper workers.</li>
+      </ul>
+
+      <h3>Milestones</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Milestone</th><th>Contents</th><th>Exit gate</th></tr></thead>
+        <tbody>
+          <tr><td><strong>v1-alpha: platform</strong></td><td>Outbox and queue fan-out, delivery table, stored counters, set-based ranking, CDN caching, read replica, Web Push rebuild</td><td>Load test at 10× current traffic meets the performance and reliability targets</td></tr>
+          <tr><td><strong>v1-beta: product</strong></td><td>Deal tiers, Alerts v2, reputation tiers and trusted posters, personalization; native app in TestFlight and the Play internal track; extension in an unlisted store listing</td><td>Tier and alert metrics healthy for 2 weeks with beta users</td></tr>
+          <tr><td><strong>v1 GA: launch</strong></td><td>Public app store releases, public extension, fashion launch, automated distribution</td><td>Every definition-of-done criterion met</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Risks summary</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          <tr><td>Supply depends on one affiliate network</td><td>Add a second network in v1-alpha; track supply share by source</td></tr>
+          <tr><td>Community share stalls below target</td><td>Trusted-poster fast lane, poster reputation on cards, weekly top-contributor highlights</td></tr>
+          <tr><td>App store rejection or slow review</td><td>Beta tracks from v1-beta; app stays a thin client with no app-only features</td></tr>
+          <tr><td>Moderation load grows with traffic</td><td>Trusted posters skip the AI queue; weighted flags; moderation queue SLO tracked</td></tr>
+          <tr><td>Database cost and load</td><td>CDN cache first, then read replica, then indexes; review cost per 1k DAU monthly</td></tr>
+          <tr><td>Duplicate or lost notifications</td><td>Unique delivery key, outbox pattern, retries with dead-letter</td></tr>
+          <tr><td>Search relevance</td><td>Postgres search first, with measured relevance; switch engines only on a missed target</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Compliance checklist (needs legal review before GA)</h3>
+      <ul>
+        <li><strong>India DPDP Act 2023:</strong> consent notice, purpose limitation, data-deletion requests, breach handling.</li>
+        <li><strong>IT Rules 2021 (intermediaries):</strong> published grievance officer contact and complaint timelines for user-generated content.</li>
+        <li><strong>Affiliate disclosure and consumer protection (CCPA guidelines):</strong> clear "we may earn a commission" labelling; no fabricated ratings or reviews.</li>
+        <li><strong>App store policies:</strong> in-app account deletion and privacy labels.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 6. Architecture changes ───────────────────────── -->
+    <section id="architecture-changes">
+      <h2><span class="num">6</span>Recommended architecture changes</h2>
+      <p class="intro">The architecture review found that the shape is right (one app, one database, cron jobs, thin clients). What limits scale is what happens inside the app. These 21 changes keep one Next.js app: no rewrite and no microservices. Each ships as a small PR with CI green.</p>
+
+      <h3>Phases</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Phase</th><th>Fits release</th><th>Theme</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>v0</td><td>Config wins: region, CI gate, security basics</td></tr>
+          <tr><td>1</td><td>v0.1</td><td>Foundations: core package, config, one database client, lint fences</td></tr>
+          <tr><td>2</td><td>v0.1–v0.2</td><td>Read model and caching; staging</td></tr>
+          <tr><td>3</td><td>v0.2 (before app-store launch)</td><td>API contract and versioning</td></tr>
+          <tr><td>4</td><td>v0.3 → v1-alpha</td><td>Deal lifecycle, events, notifications, jobs</td></tr>
+          <tr><td>5</td><td>Ongoing</td><td>Cleanup: SEO duplicates, large files, fences switched to error</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>1. Code structure</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Change</th><th>Today</th><th>After</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr><td>C1</td><td><strong><code>packages/core</code></strong>: pure TypeScript (zod only) holding pricing, the fake-MRP rules, hot score, loot and tier thresholds, vote and reputation rules, URL normalisation, alert matching, and the public status list</td><td>The fake-MRP rule exists as 3 rule sets plus 1 copy; "loot" has 4 thresholds; the discount formula is copied 15 times</td><td>One implementation, used by web, the scraper and mobile</td><td>1</td></tr>
+          <tr><td>C2</td><td><strong>Server layer</strong> owns all database access, split by domain (deals, voting, moderation, users, admin, seo, telegram, notifications, events, jobs)</td><td>121 files import the database client directly from pages, routes and components</td><td>Only the server layer imports it, enforced by lint (warn first, error in phase 5)</td><td>1 → 5</td></tr>
+          <tr><td>C3</td><td><strong>Deal lifecycle service</strong>: submit, approve (by source), reject, expire (with reason), promote. Each runs in one transaction, applies the core price rules and emits events</td><td>4 approve paths and 3 expire paths, each with different side effects; the fake-MRP check runs on only 1 ingestion path</td><td>One state machine for every source (user, scraper, admin, auto)</td><td>4</td></tr>
+          <tr><td>C4</td><td><strong>Deal query module</strong>: public status list, feed filter and sort, card field selection, slug lookup, list feed</td><td>The active-status literal appears 132 times; 2 feed builders rank "Top" differently; 24 files recount stored status votes</td><td>One definition. Tiers, the read replica and cache keys become one-file changes</td><td>2</td></tr>
+          <tr><td>C5</td><td><strong>Route handler kit</strong>: <code>route({ auth, body, query, flag }, fn)</code> with auth modes (public, user, active user, admin, superadmin, scheduled), one error envelope, guarded JSON parsing, cursor pagination</td><td>Auth checks are inconsistent across user mutations; 2 error shapes; 4 copies of the admin check; 29 of 40 request bodies unvalidated</td><td>Consistent auth, validation and errors; replaces the admin-guard script</td><td>3</td></tr>
+          <tr><td>C6</td><td><strong>One config module and one database client</strong>. All config is read through one validated module; the database client is re-exported from the shared package; one base URL</td><td>61 direct configuration reads; 2 database clients in web; 4 base-URL settings</td><td>Config validated in one place; one connection pool per function</td><td>1</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>2. API and clients</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Change</th><th>Today</th><th>After</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr><td>C7</td><td><strong>Versioned <code>/api/v1</code></strong> returning typed DTOs from the contracts package, with explicit field selection</td><td>Raw database rows are returned, including moderation and affiliate internals; response shapes have drifted (<code>vote</code> boolean vs object)</td><td>A stable public contract that leaks no internal columns</td><td>3</td></tr>
+          <tr><td>C8</td><td><strong>Freeze the legacy unversioned routes</strong> as adapters over the services, locked by contract snapshot tests</td><td>Any refactor can silently change a response</td><td>Installed apps keep working while v1 rolls out</td><td>3</td></tr>
+          <tr><td>C9</td><td><strong>Client identification and forced updates</strong>: the mobile app sends a client-version header; <code>/api/v1/meta</code> returns the minimum app version; over-the-air JS updates</td><td>No versioning, no minimum version, no OTA updates</td><td>Old builds can be retired safely: legacy routes are removed when under 2% of requests come from old builds</td><td>3</td></tr>
+          <tr><td>C10</td><td><strong>Mobile and extension use core and contracts</strong>: one base URL per client; the extension moves to the canonical domain and uses only <code>/api/v1</code></td><td>8 base-URL declarations in mobile; a production fallback to the preview domain; the extension calls the old <code>.in</code> domain; pricing mirrored by hand</td><td>The same rules and the same contract on every surface</td><td>1 (core) / 3 (contracts)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>3. Side effects and background jobs</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Change</th><th>Today</th><th>After</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr><td>C11</td><td><strong>Outbox</strong>: a domain-event table (type, payload, unique dedupe key, processed time, attempts), written inside service transactions and drained by a job. Interim: wrap remaining unawaited calls in <code>after()</code></td><td>5 request routes fire unawaited side effects (Telegram, AI summary, notifications, counters); no <code>after()</code> anywhere</td><td>No lost or duplicate side effects; request latency independent of the number of channels</td><td>4</td></tr>
+          <tr><td>C12</td><td><strong>Notification handlers and channels</strong>: events map to actions; one sender per channel; alert delivery rows unique on (alert, deal)</td><td>4 copies of the push sender and 2 Telegram senders; crons can double-send</td><td>One sender per channel; exactly-once alert delivery</td><td>4</td></tr>
+          <tr><td>C13</td><td><strong>Job runner</strong>: a database advisory lock per job, a run-state table (last success, cursor, counts), paging with bounded concurrency, a time limit, direct service calls instead of HTTP self-calls</td><td>No locks; a 31-minute lookback on a 30-minute schedule; unbounded <code>Promise.all</code>; digests call an internal endpoint over HTTP</td><td>Jobs can't overlap, resume after failure, and leave an audit trail</td><td>4</td></tr>
+          <tr><td>C14</td><td><strong>Queue in front of the outbox</strong> (Upstash QStash) for fan-out at scale</td><td>Fan-out runs inside cron functions</td><td>Alerts delivered within 5 minutes at 100k subscribers</td><td>v1-alpha</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>4. Runtime and infrastructure</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Change</th><th>Today</th><th>After</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr><td>C15</td><td><strong>Run in India</strong>: set the function region to Mumbai (or Singapore), move the database to the same region, fix the README claim</td><td>Functions run in US East; no region is configured</td><td>About 200 ms+ less per request (estimate)</td><td>0 (needs region decision)</td></tr>
+          <tr><td>C16</td><td><strong>Cacheable pages</strong>: a static header plus a client island that reads a summary endpoint; cached hot reads; CDN cache headers on anonymous API reads</td><td>The header calls auth on 52 of 67 pages; no cache APIs used; the homepage returns <code>no-store</code></td><td>Anonymous traffic served from cache (target p95 under 300 ms)</td><td>2</td></tr>
+          <tr><td>C17</td><td><strong>Staging and safe deploys</strong>: branch protection on <code>main</code> requiring the type-check; a database branch or staging database for previews; migrations run in a gated step</td><td>No staging; migrations are manual; nothing stops a red commit from deploying; no branch protection</td><td>Schema changes are rehearsed and gated</td><td>0 (protection) / 2 (staging)</td></tr>
+          <tr><td>C18</td><td><strong>Connection limits</strong>: small connection limit and pool timeout on the pooled connection; capped concurrency in jobs</td><td>No limits in code</td><td>No database connection exhaustion during cron bursts</td><td>0</td></tr>
+          <tr><td>C19</td><td><strong>Observability</strong>: a health endpoint (database ping), an uptime monitor, product analytics for the v0 metrics, run history from the job runner</td><td>Error monitoring only; no health check, analytics or job audit trail</td><td>Problems are detected before users report them</td><td>0 / 4</td></tr>
+          <tr><td>C20</td><td><strong>Security hardening</strong></td><td>Gaps identified (tracked privately)</td><td>Hardened before public scale</td><td>0 / 3</td></tr>
+          <tr><td>C21</td><td><strong>Dependency upkeep</strong>: automated security updates; an Expo SDK upgrade before app-store launch; track the stable auth library release</td><td>Automated updates disabled; Expo SDK 51; the auth library is pinned to a beta</td><td>Security patches arrive automatically</td><td>0</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Guardrails</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Rule</th><th>Enforced by</th><th>Depends on</th></tr></thead>
+        <tbody>
+          <tr><td>G1</td><td>Only the server layer and the database package import Prisma</td><td>ESLint <code>no-restricted-imports</code></td><td>C2</td></tr>
+          <tr><td>G2</td><td>UI components never import the server layer</td><td>ESLint <code>no-restricted-imports</code></td><td>C2</td></tr>
+          <tr><td>G3</td><td>Every API route handler is built with <code>route()</code></td><td>CI script (replaces the admin-guard script)</td><td>C5</td></tr>
+          <tr><td>G4</td><td>Business thresholds live only in <code>packages/core</code>; a numeric threshold literal in the app layer is flagged in review</td><td>Code review checklist</td><td>C1</td></tr>
+          <tr><td>G5</td><td>Side effects happen only through <code>emit()</code> inside a service transaction; handlers never call channels directly</td><td>ESLint (no channel imports outside notifications)</td><td>C11, C12</td></tr>
+          <tr><td>G6</td><td><code>/api/v1</code> is additive-only; a breaking change means <code>/api/v2</code> runs in parallel</td><td>Contract snapshot tests in CI</td><td>C7, C8</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Target layout</h3>
+      <div class="table-wrap"><pre>
+packages/
+  core/          rules + contracts/v1 + typed client (zod only)
+  database/      the only PrismaClient (+ read-replica client later)
+  scraper/       uses core for price rules and URL keys
+  config/        shared eslint (layering rules) and tsconfig bases
+apps/web/src/
+  server/        env, flags, http/route, deals/{queries,dto,lifecycle}, voting, moderation,
+                 users, admin, seo, telegram, events/outbox, notifications/{handlers,channels}, jobs
+  app/api/v1/**  thin handlers: route() → service → core DTO
+  app/api/**     legacy routes, frozen and snapshot-tested
+  app/**/page    call server/* only; static shell + client islands
+apps/mobile      core + contracts; one API base URL; OTA updates
+apps/extension   /api/v1 only; one config
+</pre></div>
+    </section>
+
+    <!-- ───────────────────────── 7. Scale ───────────────────────── -->
+    <section id="scale">
+      <h2><span class="num">7</span>Scaling path</h2>
+      <p class="intro">Each stage names the bottleneck to expect and the change that addresses it. Nothing moves to a new service until a bottleneck is measured.</p>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Scale</th><th>Expected bottleneck</th><th>Change</th></tr></thead>
+        <tbody>
+          <tr><td><strong>0–1k DAU</strong></td><td>Database queries per request</td><td>Remove dead queries, cache stats, add indexes (v0 / v0.1)</td></tr>
+          <tr><td><strong>1k–10k DAU</strong></td><td>Anonymous renders, vote writes, cron fan-out</td><td>CDN-cache anonymous pages and feeds (<code>s-maxage</code>, stale-while-revalidate); cursor pagination; stored counters; one SQL update to recompute hot scores; batched email sends; a serverless connection limit</td></tr>
+          <tr><td><strong>10k–100k DAU</strong></td><td>Notification fan-out and search</td><td>Queue-driven fan-out on events (<code>deal_approved</code>, <code>deal_promoted</code>); per-alert delivery table keyed on (alert, deal); Postgres full-text or trigram search; Redis view and click counters flushed hourly; read replica for feeds</td></tr>
+          <tr><td><strong>100k+ DAU</strong></td><td>Search relevance and job isolation</td><td>Dedicated search engine; separate worker service for the scraper and notifications; more categories</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Invariants at every stage</h3>
+      <ul>
+        <li>Anonymous traffic never reaches the database uncached.</li>
+        <li>Every fan-out job is idempotent.</li>
+        <li>Hot counters are stored on the row, not recounted.</li>
+        <li>The monolith is split only after a bottleneck has been measured.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 8. Scraper ───────────────────────── -->
+    <section id="scraper">
+      <h2><span class="num">8</span>Scraper and deal-supply improvements</h2>
+      <p class="intro">The scraper is the main source of supply, and today it delivers almost nothing. The analysis covers how it runs, what it measures and what to fix first.</p>
+
+      <h3>Today</h3>
+      <ul>
+        <li><strong>Probably no deal has ever reached production.</strong> The workflow ran 50 times in June 2026: 48 failed and 2 succeeded, and the scraper step took 1–6 seconds. No feed credentials are configured, so every adapter skips. The schedule has been commented out since mid-June 2026.</li>
+        <li><strong>No category or niche filter.</strong> Sources return all categories, and a person picks the category at approval. An estimated 75–90% of queued items would be off-niche for the beauty-first launch (estimate).</li>
+        <li><strong>No ranking before review.</strong> The admin queue is newest-first and capped at 100 rows. Approved deals start at hot score 0.</li>
+        <li><strong>Fetch failures are reported as success.</strong> Each adapter returns an empty list on error, so a run is recorded as completed with 0 found, and nothing reaches error monitoring.</li>
+        <li><strong>Several defects would break or degrade it once feeds are connected:</strong> approval probably fails when no store is picked (estimate); affiliate redirect links break deduplication; scraped deals never expire.</li>
+      </ul>
+
+      <h3>Measured run timings (GitHub Actions, June 2026)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Stage</th><th>Median</th><th>Range</th></tr></thead>
+        <tbody>
+          <tr><td>Queue (created → started)</td><td>2–3 s</td><td>2–10 s</td></tr>
+          <tr><td><code>npm ci</code> for the whole monorepo</td><td>29 s</td><td>23–31 s</td></tr>
+          <tr><td>Runner setup (Node)</td><td>6 s</td><td>5–8 s</td></tr>
+          <tr><td>Database client generation</td><td>2 s</td><td>2–3 s</td></tr>
+          <tr><td><strong>Setup before the scraper starts</strong></td><td><strong>≈ 40 s</strong></td><td>37–50 s</td></tr>
+          <tr><td><strong>Scraper step (skipping; no feed credentials)</strong></td><td><strong>1 s</strong></td><td>1–6 s</td></tr>
+          <tr><td><strong>Whole run</strong></td><td><strong>47 s</strong></td><td>42–59 s</td></tr>
+        </tbody>
+      </table></div>
+      <p class="intro">About 85% of every run today is setup. With feeds connected, the estimate is 1.5–2.5 min per run (estimate). If the database moves to India while runners stay in the US, runs become 4–5 min unless writes are batched (estimate).</p>
+
+      <h3>Latency: from a deal at the source to a user seeing and being alerted</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Stage</th><th>Best</th><th>Typical</th><th>Worst</th></tr></thead>
+        <tbody>
+          <tr><td>Schedule</td><td>0 (manual)</td><td>15 min (half of a 30-min cron)</td><td>Unbounded while paused; the runner's cron can lag 10–60 min (estimate)</td></tr>
+          <tr><td>Actions queue and setup</td><td>~45 s</td><td>~1 min</td><td>~3 min</td></tr>
+          <tr><td>Fetch and database writes</td><td>~5 s</td><td>20–40 s</td><td>5–10 min (retries or timeout)</td></tr>
+          <tr><td><strong>Admin review (human)</strong></td><td>~1 min</td><td><strong>hours</strong> (estimate)</td><td>Never (beyond row 100, or approval fails)</td></tr>
+          <tr><td>Approval and Telegram post</td><td>&lt; 1 s</td><td>~1 s</td><td>Telegram post dropped if the function freezes (estimate)</td></tr>
+          <tr><td>Alert run (every 30 min)</td><td>~0–1 min</td><td>~15 min</td><td>30 min (instant); ~24 h (daily digest)</td></tr>
+          <tr><td><strong>Total</strong></td><td><strong>≈ 5 min</strong></td><td><strong>≈ 2–8 h</strong></td><td><strong>Never</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p class="intro">The machine path is fast; the human review queue is the bottleneck. Cutting the queue to on-niche, ranked items (S4, S5) is what reduces latency.</p>
+
+      <h3>Ranked fix list</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Change</th><th>Effect</th><th>Effort</th></tr></thead>
+        <tbody>
+          <tr><td>S1</td><td>Adapters report fetch errors instead of returning empty lists. Runs record skipped, failed or completed. Persist dropped, skipped, updated and write-error counts and HTTP status. Send fetch errors to error monitoring</td><td>Outages become visible; the run fails when every source fails</td><td>S</td></tr>
+          <tr><td>S2</td><td>Approval fixes: treat an empty store as unset; default an empty description; wrap approval in a transaction with a pending-review guard; set the Telegram-posted time; show API errors in the UI</td><td>Approval works and doesn't create duplicates</td><td>S</td></tr>
+          <tr><td>S3</td><td>Canonical-URL deduplication: unwrap aggregator destination parameters; store the canonical URL on the deal and the redirect as the affiliate URL; an indexed canonical key checked against pending rows too</td><td>Removes silent blocking and cross-source duplicates</td><td>M</td></tr>
+          <tr><td>S4</td><td><strong>Niche gate at ingest</strong>: merchant and raw-category mapping to categories; merchant allow-list (beauty → fashion → baby); honour the store's scraper-enabled flag; ask sources for categories where supported; pre-fill category and store</td><td>Queue shrinks by about 75–90% (estimate); one-click approvals</td><td>M</td></tr>
+          <tr><td>S5</td><td><strong>Score the queue</strong>: discount, price drop vs history, freshness and store trust, plus the core fake-MRP rule before insert; show the real count; paginate past 100</td><td>Best deals reviewed first; lower review latency</td><td>S–M</td></tr>
+          <tr><td>S6</td><td>Set expiry from feed end dates with a default TTL (48–72 h); add a last-seen time; auto-reject pending rows that stop appearing</td><td>No stale live deals</td><td>S</td></tr>
+          <tr><td>S7</td><td>Batch writes: one lookup by external id per adapter, then bulk insert, and updates only when the price changed. Load dedup keys once per run, or query only candidate keys against an index</td><td>About 835 queries become about 10 per run; cost stays flat as the deal table grows</td><td>S–M</td></tr>
+          <tr><td>S8</td><td>Fix Keepa (#133): correct the request and deal fields; use a list-price series for MRP; fix images</td><td>Amazon yields items with correct MRP</td><td>M</td></tr>
+          <tr><td>S9</td><td>Approval side effects via <code>after()</code>, then the outbox; pass the store to Telegram; use the click-tracked link; don't auto-post price-less offers</td><td>No dropped or spam posts</td><td>S / M</td></tr>
+          <tr><td>S10</td><td>Cap retry-after waits (e.g. 30 s); set a per-adapter time budget; close orphaned running rows</td><td>Bounded worst case, under the job time limit</td><td>S</td></tr>
+          <tr><td>S11</td><td>Install only the scraper workspace (or cache dependencies)</td><td>About 25–30 s less per run</td><td>S</td></tr>
+          <tr><td>S12</td><td>Make "Run Scraper" trigger the manual workflow (or remove it); add the aggregator sources to its list; re-enable the schedule once a feed exists (consider every 15 min); notify the admin when new items arrive</td><td>Supply resumes; lower schedule latency</td><td>S</td></tr>
+          <tr><td>S13</td><td>A fair start for scraped deals: a seeded score from discount and price drop, or first-seen time from the source; refresh price history for approved items</td><td>Scraped deals are neither stuck at 0 nor flooding New; enables price-drop ranking</td><td>M</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Suggested order for v0</h3>
+      <ol class="steps">
+        <li>S12 together with one affiliate feed.</li>
+        <li>S1, S2 and S3, which must land before the first real run.</li>
+        <li>S4 and S5, which make the admin queue usable.</li>
+        <li>S6 and S7.</li>
+        <li>The rest follow the architecture phases.</li>
+      </ol>
+    </section>
+
+    <!-- ───────────────────────── 9. Ingestion ───────────────────────── -->
+    <section id="ingestion">
+      <h2><span class="num">9</span>Target ingestion pipeline</h2>
+      <p class="intro">Goal: keep the feed full of verified, on-niche deals within minutes of them appearing at the source, without a person in the hot path for the best deals. Targets are initial values and will be re-baselined after Phase A. Numbers marked (estimate) are not measurements.</p>
+
+      <h3>Targets by phase</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Metric</th><th>Today</th><th>A (v0)</th><th>B (v0.1)</th><th>C (v0.2–v0.3)</th><th>D (v1)</th></tr></thead>
+        <tbody>
+          <tr><td>Source → in review queue</td><td>Never (schedule paused)</td><td>≤ 20 min p50</td><td>≤ 15 min p50</td><td>≤ 10 min p50</td><td>≤ 5 min p50</td></tr>
+          <tr><td>Source → live on site</td><td>Hours, or never</td><td>≤ 4 h p50 (human)</td><td>≤ 1 h p50 (scored queue)</td><td><strong>≤ 15 min p50</strong> for auto-published deals</td><td>≤ 10 min p95</td></tr>
+          <tr><td>Publish → alert delivered</td><td>Up to 30 min (cron)</td><td>≤ 30 min</td><td>≤ 30 min</td><td><strong>≤ 5 min</strong> (event-driven)</td><td>≤ 5 min p95</td></tr>
+          <tr><td>Off-niche share of the queue</td><td>~75–90% (estimate)</td><td>Same</td><td>≤ 20%</td><td>≤ 10%</td><td>≤ 10%</td></tr>
+          <tr><td>Database queries per run</td><td>~835</td><td>~835</td><td>~10–20</td><td>~10–20</td><td>~10–20</td></tr>
+          <tr><td>Silent source failures</td><td>All of them</td><td>0 (visible and alerted)</td><td>0</td><td>0</td><td>0</td></tr>
+          <tr><td>Live deals that are stale (expired at source)</td><td>Unbounded</td><td>Unbounded</td><td>≤ 72 h old</td><td>≤ 24 h</td><td>≤ 6 h (re-verified)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Pipeline</h3>
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  SCH["Scheduler: per-source cadence"] --> F["Fetch: parallel, time-budgeted"]
+  F --> N["Normalize: canonical URL and product key"]
+  N --> E["Enrich: store, category, image, price history"]
+  E --> G{{"Quality gates"}}
+  G -->|"fail"| RJ["Auto-reject with reason"]
+  G -->|"pass"| S["Score"]
+  S -->|"score at or above publish threshold and trusted store"| P["Publish via lifecycle"]
+  S -->|"review band"| Q["Review queue sorted by score"]
+  S -->|"below floor"| RJ
+  Q -->|"editor approves"| P
+  P --> O[("Outbox: deal_published")]
+  O --> AL["Alerts and Telegram within minutes"]
+  R["Refresh and expiry, every run"] --> P
+</pre>
+        <figcaption>Every stage removes or ranks items. Auto-publish is on hold, so by default every item that passes the gates goes to the scored review queue.</figcaption>
+      </figure>
+
+      <h3>Stages</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Stage</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td>Schedule</td><td>Per-source cadence: Amazon price drops every 10–15 min, affiliate offers every 15 min, aggregator feeds every 15–30 min, catalogue feed hourly. A per-source lock stops runs from overlapping</td></tr>
+          <tr><td>Fetch</td><td>Sources run in parallel within a time budget. Paginate, keep a per-source cursor for incremental runs, cap retry waits at 30 s, use a circuit breaker. Adapters return errors, never a bare empty list</td></tr>
+          <tr><td>Normalize</td><td>Unwrap the aggregator redirect, strip tracking parameters, lowercase the host. Product key = store plus store product id, otherwise a hash of the canonical URL. A content hash skips unchanged items</td></tr>
+          <tr><td>Enrich</td><td>Store resolved from the host. Category from a mapping table (seeded for beauty, fashion, baby), with keyword fallback. Prefer the product image over the merchant logo. 30-day low from our own price history</td></tr>
+          <tr><td>Quality gates</td><td>Price present and sane; real MRP only; the core fake-MRP rule; niche gate; duplicate check across all sources; minimum discount. Each failure records a reason</td></tr>
+          <tr><td>Score</td><td>0–100 weighted score, stored with its breakdown so an editor can see why an item ranked high</td></tr>
+          <tr><td>Route</td><td>Publish, review queue, or reject, by score band</td></tr>
+          <tr><td>Publish</td><td>Approve through the lifecycle in one transaction: create the deal with canonical key, affiliate URL, expiry and first-seen time; write price history; seed a small hot score; emit a publish event</td></tr>
+          <tr><td>Notify</td><td>The outbox drain matches instant alerts, posts top-scored deals to Telegram, and creates in-app notifications. Idempotent per alert and deal</td></tr>
+          <tr><td>Refresh and expiry</td><td>Update last-seen times and live prices. Expire on the source end date, after 3 missed runs, on a price rise above the published price, or after a 72 h TTL</td></tr>
+          <tr><td>Writes</td><td>Per source per run: one select, one batch insert, one batch update, one run record. About 10–20 queries instead of about 835</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Scoring weights (initial; tune with data)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Component</th><th>Max points</th><th>What it measures</th></tr></thead>
+        <tbody>
+          <tr><td>Discount depth</td><td>35</td><td>Discount, capped at 70%</td></tr>
+          <tr><td>Real drop</td><td>20</td><td>Drop against our own 30-day low</td></tr>
+          <tr><td>Store trust</td><td>15</td><td>Verified store; past report rate</td></tr>
+          <tr><td>Source reliability</td><td>10</td><td>Share of that source's approvals in the last 30 days</td></tr>
+          <tr><td>Data completeness</td><td>10</td><td>Product image, real MRP, expiry present</td></tr>
+          <tr><td>Freshness</td><td>10</td><td>First seen within the last hour</td></tr>
+          <tr><td><strong>Total</strong></td><td><strong>100</strong></td><td></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Routing bands</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Band</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td>Score ≥ 75 (example threshold), all gates passed, trusted store</td><td><strong>Auto-publish</strong>, labelled "Auto-verified". <em>On hold:</em> items in this band go to the review queue instead</td></tr>
+          <tr><td>Review band (example 40–74)</td><td>Review queue sorted by score, category and store pre-filled, approved in one click; notify editors when the queue grows past a set size</td></tr>
+          <tr><td>Below floor (example: under 40)</td><td>Auto-reject with a reason, kept for tuning</td></tr>
+        </tbody>
+      </table></div>
+      <p class="intro">Shadow mode comes first: record what would have auto-published, compare it with editor decisions for two weeks, then turn it on per source.</p>
+
+      <h3>Rollout phases</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Phase</th><th>Fits</th><th>Contents</th><th>Exit check</th></tr></thead>
+        <tbody>
+          <tr><td><strong>A: make it run</strong></td><td><span class="badge now">now</span> v0</td><td>One affiliate feed; schedule every 15 min with a concurrency group; trimmed install; visible errors and per-source run records; approval fixes; canonical-URL dedup; capped retries; "Run Scraper" wired to manual dispatch</td><td>A real run ingests deals; failures show in the admin and error monitoring</td></tr>
+          <tr><td><strong>B: make review fast</strong></td><td><span class="badge planned">planned</span> v0.1</td><td>Category mapping and niche gate; pre-filled store and category; scoring and a score-sorted, paginated queue; last-seen, expiry and TTL; batched writes; editor notification; Keepa fix</td><td>Off-niche share ≤ 20%; review p50 ≤ 1 h</td></tr>
+          <tr><td><strong>C: take the human out of the hot path</strong></td><td><span class="badge planned">planned</span> v0.2–v0.3</td><td>Publish through the lifecycle with a seeded score; outbox-driven alerts; per-source scheduled functions in the India region next to the database; parallel sources; job lock and per-source state; shadow-mode auto-publish, then per source</td><td>Source → live ≤ 15 min p50 for auto-published deals; alerts ≤ 5 min after publish</td></tr>
+          <tr><td><strong>D: scale and breadth</strong></td><td><span class="badge target">target</span> v1</td><td>Incremental fetch and cursors on every source; more feeds; cross-source product identity (same product at several stores); periodic re-verification of live deals; a dedicated worker if function limits are hit</td><td>p95 ≤ 10 min; stale live deals ≤ 6 h</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Phase C latency budget (typical, estimate)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Step</th><th>Budget</th></tr></thead>
+        <tbody>
+          <tr><td>Wait for the next run (every 15 min → average)</td><td>~7 min</td></tr>
+          <tr><td>Function start, fetch, normalize, gates and score</td><td>≤ 30 s</td></tr>
+          <tr><td>Batched writes and publish transaction</td><td>≤ 5 s</td></tr>
+          <tr><td>Outbox drain → alert matching → push and Telegram</td><td>≤ 1–2 min</td></tr>
+          <tr><td><strong>Total for an auto-published deal</strong></td><td><strong>≈ 10 min</strong></td></tr>
+          <tr><td>Review-band deal</td><td>≈ 10 min + editor time (target ≤ 1 h)</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 10. Amazon ───────────────────────── -->
+    <section id="amazon">
+      <h2><span class="num">10</span>Worked example: an Amazon deal at 9:00 AM</h2>
+      <p class="intro">Scenario: a serum drops from ₹899 to ₹449 as a Lightning Deal on amazon.in at 09:00, ending at 15:00. The times below are estimates from the design, not measurements.</p>
+
+      <h3>When does it reach SnatchPicks?</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Pipeline state</th><th>In review queue</th><th>Live on site</th><th>User alerted</th><th>When the deal ends (15:00)</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Today</strong></td><td>Never: schedule paused, no feed credential, and the Keepa adapter likely returns nothing (#133)</td><td>Only if a community member posts it (≈ 09:05–10:00, if the duplicate bug is fixed)</td><td>Next alert run, up to +30 min</td><td>Stays live forever (no expiry)</td></tr>
+          <tr><td><strong>Today's design with feeds</strong> (every 30 min, sequential, human review)</td><td>09:30–10:30 (estimate)</td><td>≈ 11:00–17:00 (an editor's working day)</td><td>Live + up to 30 min</td><td>Stays live (no expiry)</td></tr>
+          <tr><td><strong>Phase A</strong> (one feed, every 15 min, visible errors)</td><td>≈ 09:15–09:30</td><td>≈ 10:00–13:00 (unsorted queue)</td><td>Live + up to 30 min</td><td>Stays live unless an editor expires it</td></tr>
+          <tr><td><strong>Phase B</strong> (niche gate, scored queue, editor notification, TTL)</td><td>≈ 09:10–09:20</td><td><strong>≈ 09:30–10:00</strong> (top of a short queue, one click)</td><td>Live + up to 30 min</td><td>Expires at the 72 h TTL, or sooner if re-checked</td></tr>
+          <tr><td><strong>Phase C</strong> (Amazon tracking and verification, event-driven alerts, auto-publish once approved)</td><td>n/a for high-score deals</td><td><strong>≈ 09:02–09:11</strong></td><td>≈ 09:03–09:12 (outbox, about 1 min)</td><td><strong>Expires at 15:00</strong>, or earlier when sold out or the price reverts</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><strong>While auto-publish is on hold</strong>
+        Phase C deals that would qualify go to the top of the queue with an editor push notification. The realistic target is then live at ≈ 09:15–09:40 during staffed hours (estimate).</div>
+
+      <h3>Phase C timeline</h3>
+      <ol class="steps">
+        <li><strong>09:00:00</strong>: the deal starts on Amazon.</li>
+        <li><strong>09:00–09:10, detected</strong>: by the first of several paths: a tracked-product poll (hot tier every 10 min), an Amazon category search with a minimum saving percentage (every 10 min), the Keepa deals poll (every 10–15 min; Keepa's own detection lag varies, estimate), or a community post at any time.</li>
+        <li><strong>+≤ 5 s, normalize</strong>: the ASIN becomes the product key; dedup across all paths; enrich (store = Amazon; category via browse node → mapping).</li>
+        <li><strong>+≈ 1 s, verify</strong>: one Creators API lookup (up to 10 ASINs per call) returns the current price, the saving basis (list price, so no guessing), the saving percentage, deal details (start and end times, percent claimed, lightning or Prime-exclusive), availability and the affiliate detail URL.</li>
+        <li><strong>+&lt; 1 s, gates and score</strong>: fake-MRP rule against the real list price, niche, minimum discount, in stock; then score.</li>
+        <li><strong>+&lt; 1 s, publish</strong>: through the lifecycle. Expiry = the API's deal end time; badges ("Lightning deal", "38% claimed"); price history row; outbox event.</li>
+        <li><strong>+≤ 1 min, notify</strong>: outbox drain → alert matching → push and Telegram.</li>
+        <li><strong>Every 10 min, re-verify</strong>: the hot-tier poll updates "percent claimed" and expires the deal on sell-out, price reversion or end time.</li>
+        <li><strong>15:00</strong>: automatic expiry.</li>
+      </ol>
+
+      <h3>Amazon data sources</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Source</th><th>What it gives</th><th>Access</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Amazon Creators API</strong> (replaces PA-API 5, which is deprecated and now returns 403)</td><td>Search by category and minimum saving percentage; lookup of up to 10 products per call; offers with price, saving basis, savings, deal details, availability and buy box</td><td>Requires at least 10 qualifying sales in the last 30 days; access is lost after 30 days without sales. Starts at 1 request/s and 8,640 requests/day, scaling with shipped revenue</td><td><strong>Verification and tracking (authoritative)</strong>; discovery</td></tr>
+          <tr><td><strong>Keepa</strong></td><td>Price-history-based drop detection across Amazon</td><td>Paid plan; quota to verify</td><td><strong>Discovery</strong>, until Creators API access exists</td></tr>
+          <tr><td>Cuelinks / INRDeals</td><td>Amazon campaign offers (often campaign-level, not product-level, estimate)</td><td>Existing adapters</td><td>Supplementary discovery</td></tr>
+          <tr><td>Community posts</td><td>Anything users spot</td><td>Existing</td><td>Discovery; verified against the Creators API when available</td></tr>
+        </tbody>
+      </table></div>
+      <p class="intro">Not used: scraping Amazon web pages, which goes against Amazon's conditions of use. Only official APIs and partners.</p>
+      <p class="intro">Bootstrapping: Creators API access depends on sales, so Phases A and B run on Keepa, community posts and aggregators with editor review. Apply as soon as the account reaches 10 qualifying sales in 30 days, then switch verification to it in Phase C. Check that the Indian store supports the minimum-saving filter and deal details (to verify).</p>
+
+      <h3>Components to build</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Component</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Tracked-product table</strong></td><td>Product key (ASIN), category, tier (hot, warm, cold), check interval, last checked, last price and list price. Seeded from past deals, saved deals, price watches, alert keywords and best-sellers in niche browse nodes. Promoted to hot on clicks, saves or an active deal</td></tr>
+          <tr><td><strong>Discovery workers</strong></td><td>One per path, on a schedule: Amazon search (niche browse nodes × minimum saving), Keepa deals, aggregators. Each emits candidate events</td></tr>
+          <tr><td><strong>Tracker worker</strong></td><td>Picks products due by tier (hot every 10 min, warm every 60 min, cold every 6 h) and batches them 10 per lookup. A drop past the threshold emits a candidate event; a reversion or sell-out emits an invalidation event</td></tr>
+          <tr><td><strong>Candidate processor</strong></td><td>One code path for every source: normalize → identity → enrich → gates → verify → score → route. Idempotent per (product key, price bucket)</td></tr>
+          <tr><td><strong>Publisher and expirer</strong></td><td>Lifecycle approve and expire; expiry from the API's deal end time; badges; price history</td></tr>
+          <tr><td><strong>API budget manager</strong></td><td>Token buckets per API (Creators API: 1 request/s and the daily cap; Keepa quota). Priority: verification &gt; live-deal re-check &gt; hot tracking &gt; discovery &gt; warm and cold tracking. Drops tiers gracefully when the budget runs low</td></tr>
+          <tr><td><strong>Latency metrics</strong></td><td>Stores source start, detected, verified, published and alerted times; dashboard p50 and p95 for each hop</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Creators API budget at the starting tier (8,640 requests/day)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Use</th><th>Calculation</th><th>Requests/day</th></tr></thead>
+        <tbody>
+          <tr><td>Discovery search</td><td>6 niche browse nodes × 3 pages × every 10 min</td><td>≈ 2,600</td></tr>
+          <tr><td>Hot tracking</td><td>300 products ÷ 10 per call × every 10 min</td><td>≈ 4,300</td></tr>
+          <tr><td>Warm tracking</td><td>500 products ÷ 10 × every 60 min</td><td>≈ 1,200</td></tr>
+          <tr><td>Candidate verification (Keepa, aggregators, users)</td><td>≈ 500 candidates ÷ 10</td><td>≈ 50</td></tr>
+          <tr><td><strong>Total</strong></td><td></td><td><strong>≈ 8,150 (≈ 94% of the cap)</strong></td></tr>
+        </tbody>
+      </table></div>
+      <p class="intro">The limit grows with shipped revenue, so tiers widen as sales grow. Until then, the budget manager drops discovery and warm tracking first.</p>
+    </section>
+
+    <!-- ───────────────────────── 11. Slickdeals ───────────────────────── -->
+    <section id="slickdeals">
+      <h2><span class="num">11</span>Feature gaps vs Slickdeals</h2>
+      <p class="intro">Slickdeals is the most established deal community. These are the gaps where SnatchPicks should learn from it, while keeping its own wedge: Gen-Z native, curated, and trust-first.</p>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Slickdeals</th><th>SnatchPicks today</th><th>Recommendation</th></tr></thead>
+        <tbody>
+          <tr><td>Three quality tiers: all deals → Popular → Frontpage</td><td>A single hot feed with Hot, New, Top and Discussed tabs; no quality tiers</td><td>Add tiers in v0.3 (New → Popular by score → Frontpage by editor pick); tier labels and a Frontpage tab by v1-beta</td></tr>
+          <tr><td>Deal alerts with a quality threshold and channel choice</td><td>Alerts fire as soon as a deal is live, before any votes; email and push only, with no quality threshold</td><td>Alerts v2 in v1-beta: minimum tier per alert, channel per alert (email, push, in-app, Telegram), pause and delivery history</td></tr>
+          <tr><td>One-tap popular alerts</td><td>8 fixed alert templates</td><td>One-tap popular-alert templates generated from search and alert data (v1)</td></tr>
+          <tr><td>A coupon verification team</td><td>An unweighted coupon-verified counter (anyone can add to it); WORKING/EXPIRED votes are separate</td><td>Coupon verification once per user, weighted by reputation; dedupe in v0.3</td></tr>
+          <tr><td>Reputation (reps)</td><td>Reputation is earned from upvotes but hidden from cards</td><td>Visible reputation tiers on cards; trusted posters skip the AI queue (v0.3 / v1-beta)</td></tr>
+          <tr><td>An auto-coupon browser extension</td><td>The Chrome extension offers coupons at checkout but is not published</td><td>Publish after the domain fix (v0.4); auto-try multiple coupons at checkout for v1 GA</td></tr>
+          <tr><td>Cashback rewards</td><td>Display-only cashback on deal pages</td><td>No in-house cashback program in v1; revisit with an Indian partner after v1</td></tr>
+          <tr><td>A personalized frontpage</td><td>A For You tab exists (hidden in the v0 plan); the onboarding modal never appears for signed-in users</td><td>Working onboarding saved server-side; For You re-enabled; follow stores and categories (v1-beta)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>India-specific opportunities</h3>
+      <div class="grid">
+        <div class="card"><span class="icon">🏦</span><h4>Bank-offer stacking</h4><p>Bank-offer pages exist behind a flag. Show stacked offers (coupon, bank offer and cashback) on the deal card once the bank-offer flag is decided. This is where Indian shoppers save most.</p></div>
+        <div class="card"><span class="icon">📅</span><h4>The sale calendar</h4><p>The sale-event calendar is hidden today. Replace it with curated calendar data for major Indian sale days. Feed it into alerts and into event pages for search.</p></div>
+        <div class="card"><span class="icon">💬</span><h4>WhatsApp sharing</h4><p>WhatsApp share and automated posting are planned for v0.4 (#146). A one-tap share on every deal card is the cheapest way to reach the family-sharing audience.</p></div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 12. Decisions ───────────────────────── -->
+    <section id="decisions">
+      <h2><span class="num">12</span>Open decisions (on hold)</h2>
+
+      <div class="callout warn"><strong>On hold by the owner, 2026-11-11</strong>
+        The owner has put the open decisions below on hold. Until they decide, these defaults are in effect: no auto-publish (everything goes to the scored review queue), and Phase A runs on GitHub Actions.</div>
+
+      <p class="intro">Every open decision gathered across the design documents, deduplicated. Decisions that appear in both the architecture review and the changes tracker are listed once.</p>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Decision</th><th>Options</th><th>Blocks</th></tr></thead>
+        <tbody>
+          <tr><td>Sign-off on the v0 plan, including the decision changes for <code>CLAUDE.md</code></td><td>Approve as written; amend the review table</td><td>Copying the v0 decision changes into the project guide; v0 start</td></tr>
+          <tr><td>Accounts</td><td>Phone OTP, or email login with password reset and verification (decide from v0 sign-up data)</td><td>Accounts work in v1</td></tr>
+          <tr><td>Search</td><td>Stay on Postgres search, or adopt a dedicated engine (decide from v1-alpha measurements)</td><td>Search architecture</td></tr>
+          <tr><td>Baby &amp; parenting vertical</td><td>In v1, or in v1.x</td><td>Vertical scope</td></tr>
+          <tr><td>Cashback</td><td>Partner integration after v1, or never</td><td>Cashback work</td></tr>
+          <tr><td>Native app GA timing</td><td>GA in v1 (as planned), or earlier depending on v0.2 retention</td><td>App store release plan</td></tr>
+          <tr><td>Region</td><td>Mumbai (<code>bom1</code>) or Singapore (<code>sin1</code>); the database must be in the same region</td><td>C15 (region)</td></tr>
+          <tr><td>Staging</td><td>A database branch per preview deployment, or one shared staging database</td><td>C17 (staging)</td></tr>
+          <tr><td>Side effects for auto-approved deals</td><td>Same side effects as admin approval (+10 reputation, AI summary, Telegram), or none</td><td>C3 (lifecycle)</td></tr>
+          <tr><td>Off-niche pages (finance, gaming, hosting, student, gift cards, home services, grocery, IPL, summer sale)</td><td>Delete them, or convert to database-driven category pages</td><td>Phase 5 cleanup</td></tr>
+          <tr><td>Duplicate SEO URL pairs</td><td>Which URL pattern to keep in each pair</td><td>Phase 5 cleanup</td></tr>
+          <tr><td>Auto-publish and its label (on hold)</td><td>"Auto-verified" (rules) vs "Editor-verified" (human), with shadow mode first; this touches the brand promise</td><td>Auto-publish in Phase C</td></tr>
+          <tr><td>Run location for Phase C</td><td>Per-source scheduled functions in the India region (recommended), or a dedicated worker</td><td>Phase C scheduler</td></tr>
+          <tr><td>First affiliate feed</td><td>Cuelinks or INRDeals (one feed unblocks Phase A)</td><td>Phase A supply</td></tr>
+          <tr><td>Cadence vs quota</td><td>Confirm rate limits and quotas for Keepa, Cuelinks, INRDeals and Flipkart before setting cadences</td><td>Per-source cadence</td></tr>
+          <tr><td>Thresholds</td><td>Minimum discount, publish threshold and TTL, to be tuned from shadow-mode data</td><td>Routing bands and expiry</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 13. Docs ───────────────────────── -->
+    <section id="docs">
+      <h2><span class="num">13</span>Where this comes from</h2>
+      <p class="intro">These pages summarise design documents kept in the private SnatchPicks product repository. The documents themselves are not published here.</p>
+
+      <h3>Source documents</h3>
+      <ul>
+        <li>V0_LAUNCH_PLAN.md</li>
+        <li>V1_PLAN.md</li>
+        <li>ARCHITECTURE_REVIEW.md</li>
+        <li>ARCHITECTURE_CHANGES.md</li>
+        <li>SCRAPER.md</li>
+        <li>INGESTION_PIPELINE.md</li>
+        <li>CHANGELOG.md</li>
+        <li>CLAUDE.md</li>
+      </ul>
+
+      <h3>Change history</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Change</th></tr></thead>
+        <tbody>
+          <tr><td>2026-11-11</td><td>Analysis of the codebase; v0 launch plan and v1 release plan (proposed, pending owner sign-off)</td></tr>
+          <tr><td>2026-11-11</td><td>Architecture review and recommended-changes tracker (C1–C21, guardrails G1–G6)</td></tr>
+          <tr><td>2026-11-11</td><td>Scraper analysis: flow, filtering, dedup, ranking, efficiency, measured run timings</td></tr>
+          <tr><td>2026-11-11</td><td>Ingestion design: target pipeline, latency targets, rollout phases A–D, Amazon worked example; decisions put on hold</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <footer>Reflects the SnatchPicks codebase as of commit <code>736a0b91</code>, November 2026. Recommendations are proposed and pending owner sign-off.</footer>
+</main>
+</div>
+</body>
+</html>
