@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnatchPicks — Hosting options &amp; cost (India)</title>
+  <meta name="description" content="Where SnatchPicks should run for Indian users: India-region availability by provider, nine candidate stacks, cost per stage in USD and INR, and the recommended stack.">
+  <meta property="og:title" content="SnatchPicks — Hosting options &amp; cost (India)">
+  <meta property="og:description" content="India-region hosting options for SnatchPicks, with latency estimates, cost per stage (USD, INR and GST) and a staged recommendation.">
+  <meta name="theme-color" content="#f97316">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
+  <link rel="stylesheet" href="assets/style.css">
+  <script type="module" src="assets/site.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <a class="brand" href="index.html">Snatch<span>Picks</span></a>
+    <ul class="site-nav">
+      <li><a href="index.html">Overview</a></li>
+      <li><a href="current.html">Current implementation</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="recommendations.html">Recommendations</a></li>
+      <li><a href="hosting.html" class="active" aria-current="page">Hosting &amp; cost</a></li>
+    </ul>
+    <ol>
+      <li><a href="#summary">Summary</a></li>
+      <li><a href="#region">Why the region matters</a></li>
+      <li><a href="#availability">India-region availability</a></li>
+      <li><a href="#stacks">Candidate stacks</a></li>
+      <li><a href="#matrix">Decision matrix</a></li>
+      <li><a href="#cost">Cost</a></li>
+      <li><a href="#recommendation">Recommendation</a></li>
+      <li><a href="#migration">Migration path</a></li>
+      <li><a href="#india">India factors</a></li>
+      <li><a href="#sources">Sources</a></li>
+    </ol>
+  </nav>
+
+  <main id="top">
+
+    <!-- ───────────────────────── 1. Summary ───────────────────────── -->
+    <section id="summary">
+      <header class="hero">
+        <div class="eyebrow">Hosting options &amp; cost</div>
+        <h1>Run it <span>in Mumbai</span></h1>
+        <p class="lead">
+          SnatchPicks' users are in India, but its servers run in US East. This page compares the realistic ways to host it
+          close to Indian users, for a team of one or two people. It covers latency, ops effort, migration effort and
+          monthly cost at three stages: v0 (~1k daily users), v0.2 (~10k) and v1 (~100k).
+        </p>
+        <div class="pills">
+          <span class="pill">Proposed · decisions on hold</span>
+          <span class="pill">Prices read 2026-11-11</span>
+          <span class="pill">₹93.8 = $1</span>
+          <span class="pill">Estimates are marked</span>
+        </div>
+      </header>
+
+      <h2><span class="num">1</span>Summary</h2>
+      <p class="intro">The four facts that drive the recommendation.</p>
+
+      <div class="grid">
+        <div class="card"><span class="icon">🏆</span><h4>Recommended: stack B <span class="badge now">Recommended</span></h4><p>Vercel Pro in Mumbai (<code>bom1</code>) + Supabase Postgres Mumbai + Upstash Redis Mumbai. About <strong>$45/mo</strong> at v0, <strong>$81/mo</strong> at v0.2 and <strong>$733/mo</strong> at v1, before the shared add-on services.</p></div>
+        <div class="card"><span class="icon">⚡</span><h4>1.7 s → ~155 ms</h4><p>The homepage took 1.7 s to first byte, measured cold, today. Uncached pages on stack B are estimated at about 155 ms. Cached anonymous pages would load in about 20–60 ms from Indian edge locations.</p></div>
+        <div class="card"><span class="icon">💼</span><h4>Vercel Pro is required</h4><p>Vercel's Hobby plan is for non-commercial use only, and its fair-use guidelines list “Affiliate linking is the primary purpose of the site” as commercial. SnatchPicks earns affiliate revenue, so it needs Pro.</p></div>
+        <div class="card"><span class="icon">🗺️</span><h4>Neon has no India region</h4><p>The current database provider's nearest region is Singapore, and a project's region can't be changed. Running functions in Mumbai against a Singapore database is the slowest option of all.</p></div>
+      </div>
+
+      <div class="callout">
+        <strong>The commercial-use rule, quoted</strong>
+        “Hobby teams are restricted to non-commercial personal use only. All commercial usage of the platform requires either a Pro or Enterprise plan.” The examples include “Affiliate linking is the primary purpose of the site.”
+        Source: <a href="https://vercel.com/docs/limits/fair-use-guidelines">Vercel fair-use guidelines</a> (read 2026-11-11). Hobby also rejects any deployment whose cron jobs run more than once a day, and SnatchPicks has jobs every 15 and 30 minutes.
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 2. Region ───────────────────────── -->
+    <section id="region">
+      <h2><span class="num">2</span>Why the region matters</h2>
+      <p class="intro">A page that misses the cache waits for the trip to the function, then for every database round trip one after another. A page makes several sequential queries, so the distance between the function and the database counts several times.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  T0["<b>Today</b><br/>US East · ~1.7 s cold"] --- T1["📱 Shopper in India"] -->|"5–25 ms"| T2["Indian edge"] -->|"190–250 ms"| T3["Function · US East"] -->|"not yet confirmed"| T4[("Neon")]
+  P0["<b>A1</b><br/>Singapore · ~200 ms"] --- P1["📱 Shopper in India"] -->|"5–25 ms"| P2["Indian edge"] -->|"50–70 ms"| P3["Function · Singapore"] -->|"~1 ms × k"| P4[("Neon · Singapore")]
+  Q0["<b>A2</b><br/>split · ~370 ms"] --- Q1["📱 Shopper in India"] -->|"5–25 ms"| Q2["Indian edge"] -->|"5–30 ms"| Q3["Function · Mumbai"] -->|"50–60 ms × k"| Q4[("Neon · Singapore")]
+  R0["<b>B</b><br/>all Mumbai · ~155 ms"] --- R1["📱 Shopper in India"] -->|"5–25 ms"| R2["Indian edge"] -->|"5–30 ms"| R3["Function · Mumbai"] -->|"~1 ms × k"| R4[("Supabase · Mumbai")]
+  classDef lbl fill:transparent,stroke:transparent,font-weight:bold
+  class T0,P0,Q0,R0 lbl
+</pre>
+        <figcaption>Request path for an uncached page. k is the number of sequential database round trips per page (about 4). All latencies are estimates.</figcaption>
+      </figure>
+
+      <h3>The model (estimates)</h3>
+      <p><code>TTFB (uncached) ≈ RTT(shopper → edge) + RTT(edge → function) + k × RTT(function → database) + render time</code></p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Input</th><th>Assumed value</th></tr></thead>
+        <tbody>
+          <tr><td>Shopper → Indian edge location</td><td>5–25 ms</td></tr>
+          <tr><td>Indian edge → Mumbai function</td><td>5–30 ms</td></tr>
+          <tr><td>India → Singapore</td><td>50–70 ms</td></tr>
+          <tr><td>Mumbai ↔ Singapore (function to database)</td><td>50–60 ms</td></tr>
+          <tr><td>India → US East</td><td>190–250 ms</td></tr>
+          <tr><td>Sequential database round trips per page (k)</td><td>about 4</td></tr>
+          <tr><td>Render time</td><td>80–150 ms</td></tr>
+        </tbody>
+      </table></div>
+      <p>Worked out: A1 ≈ 15 + 60 + 4×1 + 120 ≈ 200 ms. A2 ≈ 15 + 15 + 4×55 + 120 ≈ 370 ms. B ≈ 15 + 15 + 4×1 + 120 ≈ 155 ms. These are typical published round-trip times, not measurements. Measure with a probe in India before and after any move.</p>
+    </section>
+
+    <!-- ───────────────────────── 3. Availability ───────────────────────── -->
+    <section id="availability">
+      <h2><span class="num">3</span>India-region availability by provider</h2>
+      <p class="intro">Checked against each provider's own docs on 2026-11-11.</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Provider</th><th>India region (or nearest)</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>Vercel</td><td><span class="badge now">✓</span> <code>bom1</code> Mumbai (AWS ap-south-1); regional pricing on Pro only</td><td><a href="https://vercel.com/docs/pricing/regional-pricing/bom1">Vercel bom1 pricing</a></td></tr>
+          <tr><td>Supabase</td><td><span class="badge now">✓</span> <code>ap-south-1</code> Mumbai, as a specific region</td><td><a href="https://supabase.com/docs/guides/platform/regions">Supabase regions</a></td></tr>
+          <tr><td>Upstash Redis</td><td><span class="badge now">✓</span> <code>ap-south-1</code> Mumbai, as a primary or read region</td><td><a href="https://upstash.com/docs/redis/features/globaldatabase">Upstash global database</a></td></tr>
+          <tr><td>Neon</td><td><span class="badge gap">✗</span> No India region; Singapore (<code>aws-ap-southeast-1</code>) is nearest; a project's region can't be changed</td><td><a href="https://neon.com/docs/introduction/regions">Neon regions</a></td></tr>
+          <tr><td>Fly.io</td><td><span class="badge gap">✗</span> No India region; <code>sin</code> is nearest; $0.12/GB outbound to India</td><td><a href="https://fly.io/docs/reference/regions/">Fly.io regions</a></td></tr>
+          <tr><td>AWS</td><td><span class="badge now">✓</span> <code>ap-south-1</code> Mumbai</td><td><a href="https://aws.amazon.com/fargate/pricing/">AWS pricing</a></td></tr>
+          <tr><td>Google Cloud</td><td><span class="badge now">✓</span> <code>asia-south1</code> Mumbai (Cloud Run Tier 1) and <code>asia-south2</code> Delhi</td><td><a href="https://cloud.google.com/run/pricing">Cloud Run pricing</a></td></tr>
+          <tr><td>Azure</td><td><span class="badge now">✓</span> Central India</td><td>Azure price list</td></tr>
+          <tr><td>DigitalOcean</td><td><span class="badge target">Verify</span> BLR1 Bangalore; App Platform, managed Postgres and Valkey availability there not yet verified</td><td><a href="https://www.digitalocean.com/pricing/app-platform">DigitalOcean pricing</a></td></tr>
+          <tr><td>Render / Railway</td><td><span class="badge target">Verify</span> Singapore is nearest (not verified)</td><td>—</td></tr>
+          <tr><td>Cloudflare</td><td><span class="badge now">✓</span> 8 Indian edge locations (Mumbai, Delhi, Chennai, Bangalore, Hyderabad, Kolkata, Pune, Ahmedabad); compute runs at the edge</td><td><a href="https://developers.cloudflare.com/workers/platform/pricing/">Workers pricing</a></td></tr>
+          <tr><td>E2E Networks</td><td><span class="badge now">✓</span> India-based cloud; prices exclude GST</td><td>E2E price list</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 4. Stacks ───────────────────────── -->
+    <section id="stacks">
+      <h2><span class="num">4</span>Candidate stacks</h2>
+      <p class="intro">Nine stacks, each realistic for one or two people. Latency is the estimated uncached time to first byte from India. Migration effort is S (days), M (one to two weeks) or L (several weeks).</p>
+
+      <div class="grid lg">
+        <div class="card">
+          <span class="icon">🟧</span>
+          <h4>A1 · Vercel Singapore + Neon Singapore</h4>
+          <p><strong>Components:</strong> functions in <code>sin1</code>, Neon in Singapore, Upstash. <strong>Latency:</strong> ~200 ms. <strong>Ops:</strong> lowest. <strong>Migration:</strong> S (set the region; move Neon to Singapore if it isn't there already). <strong>Lock-in:</strong> low–medium. <strong>Risks:</strong> every uncached request pays 50–70 ms to reach Singapore; data isn't stored in India. Keeps Neon's free database branch per preview.</p>
+        </div>
+        <div class="card">
+          <span class="icon">⛔</span>
+          <h4>A2 · Vercel Mumbai + Neon Singapore <span class="badge gap">Avoid</span></h4>
+          <p><strong>Components:</strong> functions in <code>bom1</code>, Neon in Singapore. <strong>Latency:</strong> ~370 ms, the worst option, because every sequential query crosses Mumbai↔Singapore. <strong>Ops:</strong> lowest. <strong>Migration:</strong> S. <strong>Lock-in:</strong> low–medium. <strong>Risks:</strong> the delay compounds with the number of queries per page; scheduled ingestion runs far from the database.</p>
+        </div>
+        <div class="card">
+          <span class="icon">🏆</span>
+          <h4>B · Vercel Mumbai + Supabase Mumbai + Upstash Mumbai <span class="badge now">Recommended</span></h4>
+          <p><strong>Components:</strong> functions in <code>bom1</code>, Supabase Pro Postgres (with its connection pooler), Upstash Redis, all in Mumbai. <strong>Latency:</strong> ~155 ms, the best of the managed options. <strong>Ops:</strong> low. <strong>Migration:</strong> S–M (dump and restore Postgres, then swap the pooled and direct database URLs). <strong>Lock-in:</strong> low; Supabase is plain Postgres. <strong>Risks:</strong> loses Neon's free branch per preview (Supabase branches are paid); the pooler settings must be right; the US-hosted scraper is slow against a Mumbai database until its writes are batched.</p>
+        </div>
+        <div class="card">
+          <span class="icon">🟨</span>
+          <h4>C · AWS Mumbai: ECS (Fargate) + RDS + Upstash</h4>
+          <p><strong>Components:</strong> container on ECS Express Mode with Fargate ARM tasks, a load balancer, RDS Postgres, Upstash, EventBridge Scheduler, a CDN in front. <strong>Latency:</strong> ~130–200 ms. <strong>Ops:</strong> medium–high (networking, IAM, certificates, patching, alarms, home-made previews). <strong>Migration:</strong> L. <strong>Lock-in:</strong> medium. <strong>Risks:</strong> App Runner is closed to new customers, so ECS is the managed container route; egress costs $0.1093/GB without a free CDN in front; the load balancer is a fixed cost.</p>
+        </div>
+        <div class="card">
+          <span class="icon">🟫</span>
+          <h4>C′ · AWS Amplify + RDS Mumbai</h4>
+          <p><strong>Components:</strong> Amplify Hosting (official Next.js 12–15 support, built-in image optimization) + RDS. <strong>Latency:</strong> ~130–200 ms. <strong>Ops:</strong> medium. <strong>Migration:</strong> M. <strong>Lock-in:</strong> medium. <strong>Risks:</strong> $0.15 per GB served makes it the most expensive option at v1 (~$722 a month for bandwidth alone).</p>
+        </div>
+        <div class="card">
+          <span class="icon">🟦</span>
+          <h4>D · Google Cloud Mumbai: Cloud Run + Cloud SQL</h4>
+          <p><strong>Components:</strong> Cloud Run (one warm minimum instance), Cloud SQL Postgres, Upstash, Cloud Scheduler, Cloud Run Jobs, a CDN in front. <strong>Latency:</strong> ~130–200 ms warm; a cold start adds 1–3 s (estimate). <strong>Ops:</strong> medium. <strong>Migration:</strong> M–L. <strong>Lock-in:</strong> medium. <strong>Risks:</strong> Cloud SQL's Mumbai prices are unverified; no built-in connection pooler on the standard edition (verify).</p>
+        </div>
+        <div class="card">
+          <span class="icon">🔷</span>
+          <h4>E · DigitalOcean Bangalore</h4>
+          <p><strong>Components:</strong> App Platform containers, managed Postgres (with built-in pooling), Upstash or managed Valkey, a CDN in front. <strong>Latency:</strong> ~150–220 ms. <strong>Ops:</strong> low–medium. <strong>Migration:</strong> M. <strong>Lock-in:</strong> low. <strong>Risks:</strong> availability in BLR1 must be verified; shared containers don't autoscale; a high-availability standby costs extra.</p>
+        </div>
+        <div class="card">
+          <span class="icon">🟠</span>
+          <h4>F · Cloudflare Workers + Hyperdrive → Supabase Mumbai <span class="badge planned">Reassess at v1</span></h4>
+          <p><strong>Components:</strong> Next.js on Workers via the OpenNext adapter, Hyperdrive connection pooling into the Mumbai database, Cloudflare Images, cron triggers, Queues. <strong>Latency:</strong> ~150–250 ms; compute runs at Indian edge locations. <strong>Ops:</strong> medium. <strong>Migration:</strong> M–L. <strong>Lock-in:</strong> medium–high. <strong>Risks:</strong> a community adapter (supports the latest Next.js 15 minors, not Node middleware); the database client needs a driver adapter; the 10 MiB compressed Worker size limit; no egress charges.</p>
+        </div>
+        <div class="card">
+          <span class="icon">🖥️</span>
+          <h4>G · India VPS + Docker + Coolify</h4>
+          <p><strong>Components:</strong> a Linode Mumbai, DigitalOcean Bangalore or E2E server running the app, Postgres and Valkey in containers under Coolify, with a CDN in front; a managed database by v1. <strong>Latency:</strong> ~130–220 ms. <strong>Ops:</strong> high (patching, backups, monitoring, a single server until v1). <strong>Migration:</strong> M. <strong>Lock-in:</strong> lowest. <strong>Risks:</strong> one maintainer owns uptime and data durability.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <strong>Dropped from the shortlist</strong>
+        Fly.io has no India region (Singapore is nearest, and outbound traffic to India costs $0.12/GB). Render and Railway reach Asia only through Singapore (not verified), so they were not costed.
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 5. Matrix ───────────────────────── -->
+    <section id="matrix">
+      <h2><span class="num">5</span>Decision matrix</h2>
+      <p class="intro">Monthly cost excludes the shared add-on services, which are the same on every stack (<a href="#cost">§6</a>). ₹ at 93.8 per dollar, before GST.</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Stack</th><th>Uncached TTFB (est.)</th><th>$/mo v0 · v0.2 · v1</th><th>₹/mo v0 · v0.2 · v1</th><th>Ops</th><th>Migration</th><th>Lock-in</th><th>In India: web / DB / Redis / scheduler</th></tr></thead>
+        <tbody>
+          <tr><td>A1 Vercel Singapore + Neon Singapore</td><td>~200 ms</td><td>42 · 107 · 802</td><td>3,940 · 10,037 · 75,228</td><td>Low</td><td>S</td><td>Low–Med</td><td>✗ / ✗ / ✓ or ✗ / ✗</td></tr>
+          <tr><td>A2 Vercel Mumbai + Neon Singapore <span class="badge gap">Avoid</span></td><td>~370 ms</td><td>42 · 105 · 782</td><td>3,940 · 9,849 · 73,352</td><td>Low</td><td>S</td><td>Low–Med</td><td>✓ / ✗ / ✓ / ✓</td></tr>
+          <tr><td>B Vercel + Supabase + Upstash, all Mumbai <span class="badge now">Recommended</span></td><td>~155 ms</td><td>45 · 81 · 733</td><td>4,221 · 7,598 · 68,755</td><td>Low</td><td>S–M</td><td>Low</td><td>✓ / ✓ / ✓ / ✓</td></tr>
+          <tr><td>C AWS ECS + RDS Mumbai</td><td>~130–200 ms</td><td>48 · 119 · 564 + load balancer</td><td>4,502 · 11,162 · 52,903 + LB</td><td>Med–High</td><td>L</td><td>Med</td><td>✓ / ✓ / ✓ / ✓</td></tr>
+          <tr><td>C′ AWS Amplify + RDS Mumbai</td><td>~130–200 ms</td><td>34 · 150 · 1,205</td><td>3,189 · 14,070 · 113,029</td><td>Med</td><td>M</td><td>Med</td><td>✓ / ✓ / ✓ / ✓</td></tr>
+          <tr><td>D Cloud Run + Cloud SQL Mumbai</td><td>~130–200 ms warm</td><td>55 · 163 · 414 + egress</td><td>5,159 · 15,289 · 38,833 + egress</td><td>Med</td><td>M–L</td><td>Med</td><td>✓ / ✓ / ✓ / ✓</td></tr>
+          <tr><td>E DigitalOcean Bangalore</td><td>~150–220 ms</td><td>43 · 134 · 564</td><td>4,033 · 12,569 · 52,903</td><td>Low–Med</td><td>M</td><td>Low</td><td>✓? / ✓? / ✓ / ✓</td></tr>
+          <tr><td>F Cloudflare Workers + Supabase Mumbai</td><td>~150–250 ms</td><td>33 · 70 · 303</td><td>3,095 · 6,566 · 28,421</td><td>Med</td><td>M–L</td><td>Med–High</td><td>✓ edge / ✓ / ✓ / ✓</td></tr>
+          <tr><td>G India VPS + Coolify</td><td>~130–220 ms</td><td>27 · 68 · 229</td><td>2,533 · 6,378 · 21,480</td><td>High</td><td>M</td><td>Lowest</td><td>✓ / ✓ / ✓ / ✓</td></tr>
+        </tbody>
+      </table></div>
+      <p>Once anonymous pages are cached, they load in about 20–60 ms on every stack with a CDN in front.</p>
+    </section>
+
+    <!-- ───────────────────────── 6. Cost ───────────────────────── -->
+    <section id="cost">
+      <h2><span class="num">6</span>Cost</h2>
+      <p class="intro">All usage numbers are estimates from the model below. Prices were read on 2026-11-11 (see <a href="#sources">Sources</a>). Re-run the formulas when traffic or prices change.</p>
+
+      <h3>Usage model: key assumptions</h3>
+      <ul>
+        <li>Web share of daily users: 100% at v0, 70% at v0.2, 50% at v1 (the app ships in v0.2). 1.3 sessions per user per day; 4, 4.5 and 5 pages per session.</li>
+        <li>Bots and crawlers add 30% on top of human page views. 1.5 API calls per page view; 8 (v0.2) or 10 (v1) per app session.</li>
+        <li>8 CDN requests per page view, 6 of them images. HTML 60 KB, API 8 KB, static files about 150 KB and images 25 KB each.</li>
+        <li><strong>Cache hit ratio:</strong> 0% before the caching change (C16), because the header makes every page dynamic. After it: 85% of anonymous HTML and 60% of anonymous API reads. Signed-in traffic (20–30%) is never cached. v0 is modelled before C16; v0.2 and v1 after it.</li>
+        <li>CPU per dynamic request: HTML 60 ms before and 40 ms after; API 15 ms; middleware 2 ms.</li>
+      </ul>
+
+      <h3>Monthly usage</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Metric</th><th>v0 (~1k DAU)</th><th>v0.2 (~10k)</th><th>v1 (~100k)</th></tr></thead>
+        <tbody>
+          <tr><td>Human page views</td><td>156k</td><td>1.23M</td><td>9.75M</td></tr>
+          <tr><td>HTML requests incl. bots</td><td>203k</td><td>1.60M</td><td>12.7M</td></tr>
+          <tr><td>API requests</td><td>234k</td><td>2.78M</td><td>34.1M</td></tr>
+          <tr><td>CDN requests</td><td>1.68M</td><td>14.2M</td><td>124.8M</td></tr>
+          <tr><td>Bandwidth to users</td><td>59 GB</td><td>530 GB</td><td>4.8 TB</td></tr>
+          <tr><td>Dynamic function runs (before → after caching)</td><td>0.44M → 0.23M</td><td>4.4M → 2.6M</td><td>46.8M → 30.7M</td></tr>
+          <tr><td>Active CPU (before → after)</td><td>4.4 h → 1.4 h</td><td>38 h → 15 h</td><td>353 h → 163 h</td></tr>
+          <tr><td>Unique image transformations</td><td>11k</td><td>35k</td><td>100k</td></tr>
+          <tr><td>Database size</td><td>≤ 1 GB</td><td>~5 GB</td><td>~30 GB</td></tr>
+          <tr><td>Database connections (client / server)</td><td>≤ 10 / ≤ 5</td><td>30–60 / 10–20</td><td>100–300 / 30–60 + replica</td></tr>
+          <tr><td>Redis commands</td><td>0.42M</td><td>4.2M</td><td>~60M</td></tr>
+          <tr><td>Scheduled runs</td><td>7,264 (8 jobs today)</td><td>~21k (+ per-source ingestion)</td><td>~70k (+ outbox every minute)</td></tr>
+          <tr><td>Queue messages</td><td>0</td><td>0</td><td>~140k</td></tr>
+          <tr><td>Emails</td><td>10.8k</td><td>108k</td><td>1.08M</td></tr>
+          <tr><td>Push notifications</td><td>0</td><td>162k</td><td>2.7M</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Totals per stack and stage</h3>
+      <p>Each cell is <strong>USD / ₹ at 93.8 / ₹ + 18% GST</strong>, per month. Stack costs first, without the shared add-ons:</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Stack</th><th>v0</th><th>v0.2</th><th>v1</th></tr></thead>
+        <tbody>
+          <tr><td>A1 Vercel Singapore + Neon Singapore</td><td>42 / 3,940 / 4,649</td><td>107 / 10,037 / 11,843</td><td>802 / 75,228 / 88,769</td></tr>
+          <tr><td>A2 Vercel Mumbai + Neon Singapore</td><td>42 / 3,940 / 4,649</td><td>105 / 9,849 / 11,622</td><td>782 / 73,352 / 86,555</td></tr>
+          <tr><td>B Vercel + Supabase + Upstash, all Mumbai</td><td>45 / 4,221 / 4,981</td><td>81 / 7,598 / 8,965</td><td>733 / 68,755 / 81,131</td></tr>
+          <tr><td>C AWS ECS + RDS (load balancer not priced)</td><td>48 / 4,502 / 5,313</td><td>119 / 11,162 / 13,171</td><td>564 / 52,903 / 62,426</td></tr>
+          <tr><td>C′ AWS Amplify + RDS</td><td>34 / 3,189 / 3,763</td><td>150 / 14,070 / 16,603</td><td>1,205 / 113,029 / 133,374</td></tr>
+          <tr><td>D Cloud Run + Cloud SQL (Cloud SQL unverified; egress not priced)</td><td>55 / 5,159 / 6,088</td><td>163 / 15,289 / 18,041</td><td>414 / 38,833 / 45,823</td></tr>
+          <tr><td>E DigitalOcean Bangalore</td><td>43 / 4,033 / 4,759</td><td>134 / 12,569 / 14,832</td><td>564 / 52,903 / 62,426</td></tr>
+          <tr><td>F Cloudflare Workers + Supabase Mumbai</td><td>33 / 3,095 / 3,653</td><td>70 / 6,566 / 7,748</td><td>303 / 28,421 / 33,537</td></tr>
+          <tr><td>G India VPS + Coolify</td><td>27 / 2,533 / 2,988</td><td>68 / 6,378 / 7,527</td><td>229 / 21,480 / 25,347</td></tr>
+          <tr><td>Shared add-ons</td><td>46 / 4,315 / 5,091</td><td>110 / 10,318 / 12,175</td><td>1,302 / 122,128 / 144,111</td></tr>
+        </tbody>
+      </table></div>
+
+      <p>The same stacks, with the shared add-ons included:</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Stack + add-ons</th><th>v0</th><th>v0.2</th><th>v1</th></tr></thead>
+        <tbody>
+          <tr><td>A1</td><td>88 / 8,254 / 9,740</td><td>217 / 20,355 / 24,018</td><td>2,104 / 197,355 / 232,879</td></tr>
+          <tr><td>A2</td><td>88 / 8,254 / 9,740</td><td>215 / 20,167 / 23,797</td><td>2,084 / 195,479 / 230,665</td></tr>
+          <tr><td>B</td><td>91 / 8,536 / 10,072</td><td>191 / 17,916 / 21,141</td><td>2,035 / 190,883 / 225,242</td></tr>
+          <tr><td>C (+ load balancer)</td><td>94 / 8,817 / 10,404</td><td>229 / 21,480 / 25,347</td><td>1,866 / 175,031 / 206,536</td></tr>
+          <tr><td>C′</td><td>80 / 7,504 / 8,855</td><td>260 / 24,388 / 28,778</td><td>2,507 / 235,157 / 277,485</td></tr>
+          <tr><td>D (+ egress)</td><td>101 / 9,474 / 11,179</td><td>273 / 25,607 / 30,217</td><td>1,716 / 160,961 / 189,934</td></tr>
+          <tr><td>E</td><td>89 / 8,348 / 9,851</td><td>244 / 22,887 / 27,007</td><td>1,866 / 175,031 / 206,536</td></tr>
+          <tr><td>F</td><td>79 / 7,410 / 8,744</td><td>180 / 16,884 / 19,923</td><td>1,605 / 150,549 / 177,648</td></tr>
+          <tr><td>G</td><td>73 / 6,847 / 8,080</td><td>178 / 16,696 / 19,702</td><td>1,531 / 143,608 / 169,457</td></tr>
+        </tbody>
+      </table></div>
+
+      <figure class="diagram">
+<pre class="mermaid">
+%%{init: {"themeVariables": {"xyChart": {"plotColorPalette": "#f97316, #2563eb, #16a34a"}}}}%%
+xychart-beta
+  title "Monthly cost by stage, USD (excl. add-ons)"
+  x-axis ["v0 (~1k DAU)", "v0.2 (~10k)", "v1 (~100k)"]
+  y-axis "USD per month" 0 --> 800
+  line [45, 81, 733]
+  line [33, 70, 303]
+  line [48, 119, 564]
+</pre>
+        <figcaption>Orange: B (Vercel + Supabase + Upstash, all Mumbai). Blue: F (Cloudflare Workers + Supabase Mumbai). Green: C (AWS ECS + RDS, before the load balancer). The gap opens after about 35–40k daily users.</figcaption>
+      </figure>
+
+      <h3>Stack B by component (USD/mo)</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Component</th><th>v0</th><th>v0.2</th><th>v1</th><th>Basis</th></tr></thead>
+        <tbody>
+          <tr><td>Vercel seat</td><td>20</td><td>20</td><td>20</td><td>Pro, 1 developer seat; includes $20 usage credit</td></tr>
+          <tr><td>Vercel compute (CPU, memory, function runs)</td><td>inside credit</td><td>5.4</td><td>56.7</td><td><code>bom1</code> rates; middleware matcher narrowed</td></tr>
+          <tr><td>Vercel origin transfer</td><td>inside credit</td><td>12.7</td><td>128.1</td><td>$0.25/GB on dynamic responses</td></tr>
+          <tr><td>Vercel CDN and bandwidth</td><td>inside credit</td><td>9.2</td><td>300</td><td>v1 uses the $300 Flat Rate CDN tier (150M requests, 50 TB)</td></tr>
+          <tr><td>Vercel image optimization</td><td>inside credit</td><td>5.2</td><td>31.4</td><td>transformations + cache reads and writes</td></tr>
+          <tr><td>Vercel credit</td><td>covers ≈ 6 of usage</td><td>−20</td><td>−20</td><td>absorbs the first $20 of usage</td></tr>
+          <tr><td>Supabase Postgres (Mumbai)</td><td>25</td><td>39.8</td><td>205.8</td><td>Micro → Small + staging branch → Large + Medium replica + staging</td></tr>
+          <tr><td>Upstash Redis (Mumbai)</td><td>0</td><td>8.4</td><td>10</td><td>free tier → pay-as-you-go → fixed 250 MB plan</td></tr>
+          <tr><td>Queue (QStash)</td><td>0</td><td>0</td><td>1.4</td><td>~140k messages</td></tr>
+          <tr><td>Scheduler</td><td>incl.</td><td>incl.</td><td>incl.</td><td>Vercel cron (Pro runs up to once a minute)</td></tr>
+          <tr><td><strong>Total</strong></td><td><strong>45</strong></td><td><strong>81</strong></td><td><strong>733</strong></td><td></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Shared add-ons (same on every stack)</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Service</th><th>v0</th><th>v0.2</th><th>v1</th><th>Basis / lever</th></tr></thead>
+        <tbody>
+          <tr><td>Resend (email)</td><td>20</td><td>42.2</td><td>702</td><td>Pro → Pro 100k + overage → Scale 1M + overage. Emails ≈ 25% of daily users × 43 a month. Lever: push first, opt-in digests.</td></tr>
+          <tr><td>Sentry</td><td>0</td><td>26</td><td>26 + overage</td><td>Developer (1 user) → Team</td></tr>
+          <tr><td>Cloudinary</td><td>0</td><td>0</td><td>0</td><td>not used in code today; Plus is $99 if adopted</td></tr>
+          <tr><td>Expo (builds and over-the-air updates)</td><td>0</td><td>41.5</td><td>574</td><td>Starter + $0.005 per update user → Production + overage. Lever: ship over-the-air updates sparingly.</td></tr>
+          <tr><td>Expo Push</td><td>0</td><td>0</td><td>0</td><td>no charge found (verify)</td></tr>
+          <tr><td>GitHub Actions</td><td>≤ 25.9</td><td>0</td><td>0</td><td>scraper every 15 min on Linux at $0.006/min, if there's no free quota; moves to Vercel cron later</td></tr>
+          <tr><td><strong>Total</strong></td><td><strong>≈ 46</strong></td><td><strong>≈ 110</strong></td><td><strong>≈ 1,302</strong></td><td>the domain is not priced</td></tr>
+        </tbody>
+      </table></div>
+
+      <details>
+        <summary>Key formulas (re-run when prices change)</summary>
+<pre class="tree">
+Usage
+  PV       = webDAU × 1.3 × pagesPerSession × 30;   bots = 0.3 × PV;   HTML = PV + bots
+  API      = 1.5 × PV + appSessions × apiPerSession
+  CDNreq   = HTML + API + 8 × PV
+  GB       = [PV × (60 + 150 + 6×25) + bots × 60 + appSessions × (20×25 + apiPerSession×8)] KB / 1e6
+  dynHTML  = HTML × (1 − 0.85 × anonShare)      dynAPI = API × (1 − 0.6 × 0.6 × anonShare)
+
+Vercel   = 20 × seats + max(0, U − 20)
+  U = CPU_h × cpuRate + GBh × memRate + runs/1e6 × 0.60 + originGB × 0.25
+      + min(usage CDN, Flat Rate tier) + imageTransforms/1e3 × 0.0527 + imageReads/1e6 × 0.44
+  usage CDN = max(0, CDNreq − 10M)/1e6 × 2.20 + max(0, GB − 1000) × 0.20
+  Flat Rate tiers: $20 → 10M req / 50 TB;  $100 → 50M / 50 TB;  $300 → 150M / 50 TB
+
+Neon     = CU-hours × 0.106 + GB × 0.35 + history GB × 0.20
+Supabase = 25 + compute − 10 + max(0, disk − 8) × 0.125 + branch-hours × 0.01344
+RDS      = hourly × 730 (× 2 Multi-AZ) + GB × 0.131
+           v1 instance sizes are derived by doubling within the t4g family (estimate)
+Fargate  = tasks × (vCPU × 0.02383 + GB × 0.00261) × 730
+AWS egress (CDN in front) = max(0, originGB − 100) × 0.1093
+Cloud Run = minInstances × 2.592e6 s × (0.0000025 + 2 × 0.0000025)
+            + active vCPU-s beyond 180k × 0.000024 + requests beyond 2M /1e6 × 0.40
+            + (jobs − 3) × 0.10
+Workers  = 5 + max(0, requests − 10M)/1e6 × 0.30 + max(0, CPU-ms − 30M)/1e6 × 0.02
+Images (Cloudflare) = max(0, unique transforms − 5k)/1e3 × 0.50
+Upstash  = min(commands/1e5 × 0.20, fixed 250 MB plan $10)
+QStash   = messages/1e5 × 1
+
+INR = USD × 93.8;   INR incl. GST = INR × 1.18
+</pre>
+      </details>
+
+      <h3>Sensitivities</h3>
+      <ul>
+        <li>Before the caching change, Vercel alone on stack B costs about <strong>$716/mo at v1</strong> instead of about $516.</li>
+        <li>Leaving the middleware to run on every page adds about $27/mo at v1. A second Vercel seat adds $20/mo.</li>
+        <li>Without the Flat Rate CDN, v1 CDN and bandwidth on Vercel would be about $1,016/mo instead of $300. Turn it on.</li>
+        <li>Vercel's platform cost by daily users, in Mumbai, after caching: 10k → $34, 20k → $91, 30k → $169 (the $100 tier), <strong>40k → $391</strong> (more than 50M CDN requests forces the $300 tier), 60k → $434, 100k → $520.</li>
+        <li>Images are 6 of the 8 static requests per page view. Serving them from a separate image service delays the CDN tier jump.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 7. Recommendation ───────────────────────── -->
+    <section id="recommendation">
+      <h2><span class="num">7</span>Recommendation by stage</h2>
+      <p class="intro">Move the database now, keep Vercel, and revisit the web tier only when cost or a technical limit forces it.</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Stage</th><th>Run</th><th>Why</th><th>Switch trigger</th></tr></thead>
+        <tbody>
+          <tr><td>v0 (now)</td><td><span class="badge now">B</span> Vercel Pro Mumbai + Supabase Mumbai + Upstash Mumbai (≈ $45 + ≈ $46 add-ons)</td><td>The only managed option with every part in Mumbai; lowest latency; a small migration. If Neon's free branch per preview matters more than data in India, the fallback is A1. Never A2.</td><td>—</td></tr>
+          <tr><td>v0.1–v0.2</td><td><span class="badge now">B</span> Land the caching change, narrow the middleware, add connection limits. Per-source ingestion runs as Mumbai cron jobs next to the database.</td><td>≈ $81/mo</td><td>Vercel's platform cost over $150/mo → move images to a separate image service first</td></tr>
+          <tr><td>v1 (~100k DAU)</td><td><span class="badge planned">Reassess</span> the web tier only. The database and Redis stay in Mumbai.</td><td>At 100k daily users: B ≈ $733, F ≈ $303, C ≈ $564 + load balancer, D ≈ $414 + egress. Most of B is the $300 CDN tier plus about $128 of origin transfer.</td><td>Switch if Vercel stays at ≥ $300/mo (about 35–40k daily users) <strong>and</strong> savings would be ≥ $300/mo for 3 months in a row, <strong>or</strong> a hard limit binds (800 s function time, bundle size, cron frequency). Prefer F; choose C if long-running workers are needed.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout">
+        <strong>Bigger savings than changing hosts</strong>
+        At v1 the two largest lines on every stack are email (~$702) and over-the-air app updates (~$574). Push-first notifications, opt-in digests and infrequent over-the-air releases save more than moving off Vercel.
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 8. Migration ───────────────────────── -->
+    <section id="migration">
+      <h2><span class="num">8</span>Migration path to stack B</h2>
+      <p class="intro">A database move plus a region setting. The application code doesn't change.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  P["Create Supabase + Upstash<br/>in Mumbai"] --> R["Rehearse dump, restore<br/>and migrations"]
+  R --> F["Short write freeze"]
+  F --> D["Dump from Neon,<br/>restore to Supabase"]
+  D --> S["Swap the pooled and<br/>direct database URLs"]
+  S --> G["Set the Vercel region<br/>to Mumbai"]
+  G --> V{"Region and<br/>TTFB checks pass?"}
+  V -->|yes| OK["Done: retire Neon<br/>after a grace period"]
+  V -->|no| RB["Roll back: point the<br/>URLs back at Neon"]
+</pre>
+        <figcaption>Cutover to stack B. Rollback is a configuration change while Neon is kept.</figcaption>
+      </figure>
+
+      <h3>Do this week</h3>
+      <ol class="steps">
+        <li><strong>Confirm the Vercel team is on Pro.</strong> Hobby breaks the terms for an affiliate site and rejects the sub-daily cron jobs.</li>
+        <li><strong>Check which Vercel config file is read.</strong> Look at the project's root directory setting and the Crons tab, and confirm all 8 jobs are registered. Put the region and cron settings in the file Vercel actually uses.</li>
+        <li><strong>Read the current Neon region</strong> from the database host name (the part before <code>.aws.neon.tech</code>).</li>
+        <li><strong>Record the region decision:</strong> Vercel Mumbai with a Mumbai Postgres provider.</li>
+        <li><strong>Create Supabase Pro and Upstash Redis in Mumbai.</strong> Rehearse the dump, restore and migrations, with a small connection limit on the pooled URL.</li>
+        <li><strong>Cut over:</strong> write freeze, dump and restore, swap the pooled and direct database URLs in Vercel and CI, set the region to Mumbai, then measure from India (baseline 1.7 s).</li>
+        <li><strong>Narrow the middleware</strong> to the paths that need it. Today every page view is a billed middleware run.</li>
+        <li><strong>Security hardening (tracked privately).</strong></li>
+        <li><strong>Turn on the Flat Rate CDN</strong> and set spend alerts and limits on Vercel, Supabase and Upstash.</li>
+        <li><strong>Point <code>snatchpicks.com</code> at Vercel</strong>, and add a health check with an uptime monitor probing from India.</li>
+      </ol>
+
+      <h3>Checks after the cutover</h3>
+      <ul>
+        <li>Vercel's response headers show the Mumbai region (<code>bom1</code>).</li>
+        <li>TTFB p50 and p95 from India, compared with the 1.7 s baseline and the ~155 ms estimate.</li>
+        <li>The database pooler's connection count during the 15-minute cron job.</li>
+        <li>Vercel's usage dashboard compared with the estimates above: CDN requests, origin transfer, function runs and image transformations.</li>
+        <li>How long a scraper run takes from GitHub Actions against the Mumbai database, until ingestion moves to Mumbai cron jobs.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 9. India ───────────────────────── -->
+    <section id="india">
+      <h2><span class="num">9</span>India factors</h2>
+      <div class="callout warn">
+        <strong>Not legal or tax advice</strong>
+        Verify these points with a chartered accountant (CA) and legal counsel before relying on them.
+      </div>
+      <div class="grid">
+        <div class="card"><span class="icon">🧾</span><h4>GST</h4><p>Online services bought from foreign providers (Vercel, Supabase, Upstash, Resend, Sentry, Expo) count as OIDAR. A GST-registered business pays 18% under reverse charge and can usually claim it back as input tax credit (ITC). Otherwise the provider charges the 18%. Indian invoices (for example AWS India, Google Cloud India, E2E) add 18%; Indian list prices exclude it.</p></div>
+        <div class="card"><span class="icon">🔐</span><h4>DPDP Act 2023</h4><p>Section 16 allows personal data to go abroad except to countries the government restricts (a negative list). The Act doesn't require general consumer data to stay in India; sector rules can (for example RBI rules for payment data). The DPDP Rules 2025 were notified in November 2025, and the cross-border and significant-data-fiduciary rules are reported to start on 13 May 2027. An India database region still helps latency and user trust.</p></div>
+        <div class="card"><span class="icon">💱</span><h4>Exchange rate</h4><p>All rupee figures use ₹93.8 = $1, from the reference rate of ₹93.77 on 2026-11-12. Indian cards usually add a forex markup of about 2–3.5% on dollar charges (estimate).</p></div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 10. Sources ───────────────────────── -->
+    <section id="sources">
+      <h2><span class="num">10</span>Sources</h2>
+      <div class="callout warn">
+        <strong>Prices change</strong>
+        Every price here was read on the date shown. Re-check the vendor pages before committing to a plan.
+      </div>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Source</th><th>Used for</th><th>Read</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://vercel.com/pricing">Vercel pricing</a></td><td>Pro seat, included usage and credit</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://vercel.com/docs/pricing/regional-pricing/bom1">Vercel Mumbai (bom1) pricing</a></td><td>Mumbai rates</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://vercel.com/docs/pricing/regional-pricing/sin1">Vercel Singapore (sin1) pricing</a></td><td>Singapore rates</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://vercel.com/docs/limits/fair-use-guidelines">Vercel fair-use guidelines</a></td><td>Commercial use; function-run price</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://vercel.com/docs/cron-jobs/usage-and-pricing">Vercel cron jobs</a></td><td>Cron limits per plan</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://vercel.com/changelog/flat-rate-cdn-is-now-ga-for-pro-teams">Vercel Flat Rate CDN</a></td><td>CDN tiers</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://neon.com/docs/introduction/regions">Neon regions</a> · <a href="https://neon.com/pricing">Neon pricing</a></td><td>No India region; Launch rates</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://supabase.com/docs/guides/platform/regions">Supabase regions</a> · <a href="https://supabase.com/pricing">Supabase pricing</a></td><td>Mumbai region; Pro, compute, disk, branching</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://upstash.com/docs/redis/features/globaldatabase">Upstash regions</a> · <a href="https://upstash.com/pricing/redis">Redis pricing</a> · <a href="https://upstash.com/pricing/qstash">QStash pricing</a></td><td>Mumbai region; Redis and queue rates</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://fly.io/docs/reference/regions/">Fly.io regions</a></td><td>No India region</td><td>2026-11-11</td></tr>
+          <tr><td>AWS Price List API (ap-south-1) · <a href="https://aws.amazon.com/fargate/pricing/">Fargate</a> · <a href="https://aws.amazon.com/rds/postgresql/pricing/">RDS for PostgreSQL</a></td><td>Fargate, RDS, storage and egress rates in Mumbai</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://docs.aws.amazon.com/apprunner/latest/dg/apprunner-availability-change.html">App Runner availability change</a></td><td>Closed to new customers</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://aws.amazon.com/amplify/pricing/">Amplify pricing</a> · <a href="https://aws.amazon.com/eventbridge/pricing/">EventBridge pricing</a></td><td>Amplify rates; scheduler free tier</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://cloud.google.com/run/pricing">Cloud Run pricing</a> · <a href="https://cloud.google.com/scheduler/pricing">Cloud Scheduler pricing</a></td><td>Cloud Run Tier 1 rates; scheduler</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://instances.usage.ai/gcp/sql/region/asia-south1">Cloud SQL Mumbai (third-party copy of the GCP catalog)</a></td><td>Cloud SQL rates (unverified)</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://www.digitalocean.com/pricing/app-platform">DigitalOcean App Platform</a> · <a href="https://www.digitalocean.com/pricing/managed-databases">Managed databases</a> · <a href="https://www.digitalocean.com/pricing/droplets">Droplets</a></td><td>DigitalOcean rates</td><td>2026-11-11</td></tr>
+          <tr><td>Linode types API · E2E Networks price list · Azure price list</td><td>VPS, India cloud and Azure rates</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://developers.cloudflare.com/workers/platform/pricing/">Cloudflare Workers pricing</a> · <a href="https://developers.cloudflare.com/images/pricing/">Cloudflare Images pricing</a> · <a href="https://opennext.js.org/cloudflare">OpenNext for Cloudflare</a></td><td>Workers, Hyperdrive, Queues, Images; adapter support</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://resend.com/pricing">Resend</a> · <a href="https://sentry.io/pricing/">Sentry</a> · <a href="https://expo.dev/pricing">Expo</a> · <a href="https://docs.github.com/en/billing/reference/actions-runner-pricing">GitHub Actions runners</a></td><td>Shared add-on services</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://static.pib.gov.in/WriteReadData/specificdocs/documents/2025/nov/doc20251117695301.pdf">PIB: DPDP Rules 2025 notified</a> · <a href="https://www.dsci.in/files/content/knowledge-centre/2025/Insight-Brief-on-DPDP-Rules.pdf">DSCI brief</a></td><td>DPDP timing</td><td>2026-11-11</td></tr>
+          <tr><td><a href="https://exchangeratetool.com/historical/usd-inr">USD/INR reference rate</a></td><td>₹93.77 on 2026-11-12</td><td>2026-11-12</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <footer>
+      Reflects the SnatchPicks codebase as of commit <code>454d48fc</code>, November 2026. Prices read 2026-11-11. Diagrams rendered with Mermaid.
+    </footer>
+  </main>
+</div>
+</body>
+</html>
