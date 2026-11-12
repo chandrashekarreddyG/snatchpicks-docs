@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnatchPicks — Current implementation</title>
+  <meta name="description" content="What SnatchPicks does today: features and feature flags, deal ingestion and moderation, ranking, alerts, background jobs, data model, apps and platform, as of November 2026.">
+  <meta property="og:title" content="SnatchPicks — Current implementation">
+  <meta property="og:description" content="A factual tour of the SnatchPicks codebase today: how deals get in, get ranked and reach shoppers, and what is not working yet.">
+  <meta name="theme-color" content="#f97316">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
+  <link rel="stylesheet" href="assets/style.css">
+  <script type="module" src="assets/site.js"></script>
+  <script type="module" src="assets/flows.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <a class="brand" href="index.html">Snatch<span>Picks</span></a>
+    <ul class="site-nav">
+      <li><a href="index.html">Overview</a></li>
+      <li><a href="current.html" class="active" aria-current="page">Current implementation</a></li>
+      <li><a href="architecture.html">Architecture</a></li>
+      <li><a href="recommendations.html">Recommendations</a></li>
+    </ul>
+    <ol>
+      <li><a href="#product">Product &amp; surfaces</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#flags">Feature flags</a></li>
+      <li><a href="#flow">Core flow</a></li>
+      <li><a href="#ingestion">Deal ingestion today</a></li>
+      <li><a href="#ranking">Ranking &amp; trust</a></li>
+      <li><a href="#alerts">Alerts &amp; notifications</a></li>
+      <li><a href="#jobs">Background jobs</a></li>
+      <li><a href="#data">Data model</a></li>
+      <li><a href="#clients">Apps &amp; clients</a></li>
+      <li><a href="#platform">Platform &amp; DevOps</a></li>
+      <li><a href="#stack">Tech stack</a></li>
+      <li><a href="#limitations">Known limitations</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </nav>
+
+  <main id="top">
+    <header class="hero">
+      <div class="eyebrow">Current implementation · November 2026</div>
+      <h1>How Snatch<span>Picks</span> works today</h1>
+      <p class="lead">
+        A factual tour of what is in the code right now: what shoppers can do, how deals get in,
+        how they are ranked and delivered, and the platform underneath. Gaps are marked as gaps.
+      </p>
+      <div class="pills">
+        <span class="pill"><span class="badge now">Now</span> built and running</span>
+        <span class="pill"><span class="badge gap">Gap</span> known bug or missing piece</span>
+        <span class="pill"><span class="badge planned">Planned</span> designed, not built</span>
+      </div>
+    </header>
+
+    <!-- ───────────────────────── 1. Product ───────────────────────── -->
+    <section id="product">
+      <h2><span class="num">1</span>Product &amp; surfaces</h2>
+      <p class="intro">One web app is the primary destination, where every link lands and where SEO lives. The native app and extension are thin clients over the same API.</p>
+
+      <div class="grid">
+        <div class="card"><span class="icon">🌐</span><h4>Web app (primary) <span class="badge now">Live</span></h4><p>Next.js site and API on Vercel. Feeds, deal pages, search, store and category pages, alerts, saved deals, profile and the admin console.</p></div>
+        <div class="card"><span class="icon">📲</span><h4>Native app <span class="badge planned">Not in stores</span></h4><p>Expo app for iOS &amp; Android: a thin client over the same API. Deals feed, search, alerts, profile, and deal detail with comments and a price sparkline.</p></div>
+        <div class="card"><span class="icon">🧩</span><h4>Browser extension <span class="badge planned">Unpublished</span></h4><p>Chrome (MV3). On a product page at a supported store it shows the SnatchPicks deal, price history and cashback; at checkout it offers coupons to try.</p></div>
+        <div class="card"><span class="icon">✈️</span><h4>Telegram</h4><p>Deals are auto-posted to the SnatchPicks channel when their hot score first reaches 10, and when an admin approves a qualifying scraped deal. A bot answers browsing commands.</p></div>
+        <div class="card"><span class="icon">📸</span><h4>Instagram</h4><p>A discovery channel, posted by hand today. There is no automation in the code yet.</p></div>
+        <div class="card"><span class="icon">✉️</span><h4>Email &amp; push</h4><p>Alert emails, daily and weekly digests, “expiring soon” and “just went LOOT” pushes for saved deals, and price-drop alerts.</p></div>
+      </div>
+
+      <h3>Who does what</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Role</th><th>Can</th></tr></thead>
+        <tbody>
+          <tr><td><code>USER</code></td><td>Browse, submit, vote, comment, save, report, and set alerts.</td></tr>
+          <tr><td><code>ADMIN</code></td><td>Everything above, plus the moderation queue, the scraper review queue, reports, stores, categories, collections, deal of the day, analytics and exports.</td></tr>
+          <tr><td><code>SUPERADMIN</code></td><td>Everything above, plus managing users and admins.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 2. Features ───────────────────────── -->
+    <section id="features">
+      <h2><span class="num">2</span>Features</h2>
+      <p class="intro">The core features below are live in the web app. Frozen and hidden features are listed after them, with what their flag really does.</p>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Feature</th><th>What it does today</th></tr></thead>
+        <tbody>
+          <tr><td>Deal feeds</td><td>Tabs for <em>Hot</em> (hot score), <em>New</em>, <em>Top</em>, <em>Discussed</em> and <em>Fresh</em>; filter by category or store; time windows for today and this week.</td></tr>
+          <tr><td>Deal page</td><td>Price vs. original price, discount, coupon code, bank-card offer, store cashback, expiry countdown, price history, an AI summary when one was generated, related deals and threaded comments. An expired deal shows an “expired” page with similar deals. <span class="badge gap">Gap</span> Any deal that is not <code>ACTIVE</code> (including pending ones) is shown as expired.</td></tr>
+          <tr><td>Submit a deal</td><td>Title, description, URL, prices, store, category, coupon, bank offer, expiry and city, plus flags such as YMMV, new-users-only, card-specific, in-store and recurring. Up to 3 submissions per user per hour.</td></tr>
+          <tr><td>Voting</td><td>One 👍/👎 per user per deal (toggle or switch). Votes drive ranking and the poster's reputation.</td></tr>
+          <tr><td>“Still working?”</td><td>Separate WORKING / EXPIRED votes, so the community can retire dead deals.</td></tr>
+          <tr><td>Comments</td><td>Threaded replies with flairs (working, expired, bank tip, stacking tip, question) and likes. The deal owner is notified in-app.</td></tr>
+          <tr><td>Deal alerts</td><td>Keyword, category, store and minimum-discount filters, delivered instantly, daily or weekly. Up to 10 active alerts per user.</td></tr>
+          <tr><td>Saved deals</td><td>Bookmark deals; get a push when a saved deal is about to expire or just went LOOT.</td></tr>
+          <tr><td>Search</td><td>Search with autocomplete; sort by hot, new, discount or price; coupon-only filter.</td></tr>
+          <tr><td>Reports</td><td>Flag spam, expired, duplicate, misleading or inappropriate content for admin review.</td></tr>
+          <tr><td>SEO landing pages</td><td>Generated from live data: store, category, store × category, “under ₹X”, expiring today, sale events and freebies. No templated buying guides (about 6,000 were deliberately removed).</td></tr>
+          <tr><td>Leaderboard &amp; profiles</td><td>Contributor reputation: +1 / −1 for each up / down vote on your deals, +1 per comment, +10 when an admin bulk-approves your deal, +10 for a successful referral.</td></tr>
+          <tr><td>Onboarding</td><td><span class="badge gap">Gap</span> An onboarding modal (pick categories and stores) exists, but its signed-in check can't see the session, so it never appears for signed-in users.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Built but frozen or hidden</h3>
+      <p>To keep focus until the core loop has traction (“no new features until 1,000 daily active users”), these exist in the code behind feature flags. See <a href="#flags">Feature flags</a> for what each flag actually switches off.</p>
+      <ul>
+        <li><strong>Tier 2, frozen:</strong> deal requests (“find me a deal on…”), curated collections, price-history charts, product price-watch, referrals, bank-offer pages.</li>
+        <li><strong>Tier 3, hidden pending a cut decision:</strong> “I got it” purchase confirmations, the sale-event calendar.</li>
+        <li><strong>Already cut:</strong> forums, the “Picks” points currency, daily check-in streaks, badges and the quiz were removed from the database by migration <code>1_remove_tier3</code>.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 3. Flags ───────────────────────── -->
+    <section id="flags">
+      <h2><span class="num">3</span>Feature flags</h2>
+      <p class="intro">Eight flags exist in <code>FEATURE_FLAGS</code>. Each is read once from the deployment's configuration when the server starts, so a flag is fixed per deploy. Only four of them gate anything, and only at page level.</p>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Flag</th><th>Tier</th><th>Surface</th><th>Gates anything today?</th></tr></thead>
+        <tbody>
+          <tr><td><code>dealRequests</code></td><td>2</td><td>Deal requests (<code>/requests</code>)</td><td><span class="badge now">Yes</span> The page returns 404 when off. Its API routes stay live.</td></tr>
+          <tr><td><code>collections</code></td><td>2</td><td>Curated collections (<code>/collections</code>)</td><td><span class="badge now">Yes</span> Page only.</td></tr>
+          <tr><td><code>productWatch</code></td><td>2</td><td>Price watch (<code>/watchlist</code>)</td><td><span class="badge now">Yes</span> Page only. The hourly <code>price-watch-check</code> job still runs.</td></tr>
+          <tr><td><code>bankOffers</code></td><td>2</td><td>Bank and card offer pages (<code>/bank-offers</code>)</td><td><span class="badge now">Yes</span> Page only.</td></tr>
+          <tr><td><code>priceHistory</code></td><td>2</td><td>Price-history chart</td><td><span class="badge gap">No</span> Nothing reads the flag; the chart renders regardless.</td></tr>
+          <tr><td><code>referrals</code></td><td>2</td><td>Referral system</td><td><span class="badge gap">No</span> Nothing reads the flag.</td></tr>
+          <tr><td><code>purchaseConfirmation</code></td><td>3</td><td>Purchase confirmations</td><td><span class="badge gap">No</span> Nothing reads the flag.</td></tr>
+          <tr><td><code>saleEvents</code></td><td>3</td><td>Sale-event calendar</td><td><span class="badge gap">No</span> Nothing reads the flag; the <code>sale-event-alerts</code> job still runs daily.</td></tr>
+        </tbody>
+      </table></div>
+      <p>The code defaults every flag to off unless a deployment turns it on. Which flags are on in production could not be checked from the code.</p>
+    </section>
+
+    <!-- ───────────────────────── 4. Core flow ───────────────────────── -->
+    <section id="flow">
+      <h2><span class="num">4</span>The core flow</h2>
+      <p class="intro">Deals come in, get checked, get ranked by the community, and get pushed to the people who want them. Every click out feeds the affiliate model that funds the loop.</p>
+
+      <h3>Follow one deal, from spotted to sold</h3>
+      <p class="intro">Press play, or click any stop, to watch an example deal move through SnatchPicks. The deal card changes as each part of the system acts on it.</p>
+      <div class="callout warn">
+        <strong>This walkthrough shows the designed flow.</strong>
+        Two steps don't work like this yet: the duplicate check currently matches a new submission against itself, so ordinary submissions are auto-rejected as duplicates; and app push is not configured, so alerts reach shoppers by email only. Both are listed under <a href="#limitations">Known limitations</a>.
+      </div>
+      <div class="journey" data-journey>
+        <noscript><p>Enable JavaScript to see the interactive walkthrough.</p></noscript>
+      </div>
+
+      <h3>Three typical journeys</h3>
+      <div class="grid">
+        <div class="card">
+          <h4>🛍️ The shopper</h4>
+          <ol class="steps">
+            <li>Opens the Hot feed, or gets an alert.</li>
+            <li>Opens a deal: sees the real price, original price, coupon and price history.</li>
+            <li>Saves it, votes, or clicks out to buy.</li>
+            <li>Gets nudged if a saved deal is about to expire.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h4>✍️ The contributor</h4>
+          <ol class="steps">
+            <li>Signs in and submits a deal (up to 3 per hour).</li>
+            <li>Automated checks approve, reject or queue it within seconds.</li>
+            <li>Upvotes raise the deal's rank and the poster's reputation.</li>
+            <li>At milestones (5, 10, 25, 50, 100 and 500 upvotes) they get an in-app notification.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h4>🧑‍⚖️ The admin</h4>
+          <ol class="steps">
+            <li>Reviews submissions the automated checks weren't sure about.</li>
+            <li>Reviews scraped deals, picks a category, approves or rejects.</li>
+            <li>Handles reports, features deals, sets the deal of the day.</li>
+            <li>Watches analytics and scraper runs.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 5. Ingestion ───────────────────────── -->
+    <section id="ingestion">
+      <h2><span class="num">5</span>Deal ingestion today</h2>
+      <p class="intro">Deals enter through two doors: user submissions, which go through an automated moderation pipeline, and the scraper, whose items always wait for a human. Both end up as the same <code>Deal</code> record in the public feed.</p>
+
+      <div class="callout warn">
+        <strong>No real automated supply yet.</strong>
+        The scraper's schedule has been paused since 14 June 2026, and no partner-feed key has ever been configured, so every adapter skips. In practice the feed is filled by hand-curated and user-submitted deals.
+      </div>
+
+      <h3>Door 1: user submission and the moderation pipeline</h3>
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart TD
+  S["User submits a deal<br/>POST /api/deals"] --> G{{"Signed in and under<br/>3 deals this hour?"}}
+  G -->|no| X["Refused"]
+  G -->|yes| P["Saved as PENDING<br/>plus first price-history point"]
+  P --> M1{{"1 · URL safe?<br/>Google Safe Browsing"}}
+  M1 -->|malicious| R["AUTO_REJECTED → REJECTED"]
+  M1 -->|ok| M2{{"2 · Already posted?<br/>URL without tracking params"}}
+  M2 -->|duplicate| R
+  M2 -->|new| M3{{"3 · Price sane?<br/>fake-MRP detector"}}
+  M3 -->|suspicious| Q["NEEDS_REVIEW<br/>admin queue"]
+  M3 -->|ok| M4{{"4 · AI content check<br/>gpt-4o-mini"}}
+  M4 -->|"legit, confidence ≥ 0.82"| A["AUTO_APPROVED → ACTIVE"]
+  M4 -->|"spam or malicious, ≥ 0.82"| R
+  M4 -->|unclear| Q
+  Q -->|approve| A2["ADMIN_APPROVED → ACTIVE"]
+  Q -->|reject| R2["ADMIN_REJECTED → REJECTED"]
+</pre>
+        <figcaption>Moderation runs synchronously right after the deal is saved; the submitter sees the result</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Check</th><th>Rule</th><th>On failure</th></tr></thead>
+        <tbody>
+          <tr><td>1 · URL safety</td><td>Google Safe Browsing: malware, phishing, unwanted software.</td><td>Auto-reject</td></tr>
+          <tr><td>2 · Duplicate</td><td>Same store URL (ignoring common tracking parameters) already <code>ACTIVE</code>, <code>PENDING</code> or <code>FRONTPAGE</code>. <span class="badge gap">Bug</span> The new deal is already saved as <code>PENDING</code> when this runs, and the check doesn't exclude it, so it matches itself.</td><td>Auto-reject</td></tr>
+          <tr><td>3 · Price sanity</td><td>Negative price · deal price above original · discount over 99% · original more than 5× the price on items under ₹10,000 (MRP inflation) · over 90% off on items under ₹50,000.</td><td>Human review</td></tr>
+          <tr><td>4 · AI check</td><td><code>gpt-4o-mini</code> classifies title, description and URL as legit / spam / malicious / unclear with a confidence score. It auto-decides only at ≥ 0.82.</td><td>Reject, or human review if unsure</td></tr>
+        </tbody>
+      </table></div>
+      <p>The fake-MRP rules run only on this door. Deals created by the scraper or by an admin skip them.</p>
+
+      <h3>Door 2: the scraper</h3>
+      <p>The scraper (<code>packages/scraper</code>) is a Node script run by a GitHub Actions workflow. It has five adapters; each returns nothing until its partner key is configured.</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Adapter</th><th>Source</th><th>Filter sent to the source</th><th>Cap per run</th></tr></thead>
+        <tbody>
+          <tr><td><code>amazon</code></td><td>Keepa deals API (Amazon.in)</td><td>Price drops of 20% or more</td><td>50</td></tr>
+          <tr><td><code>flipkart</code></td><td>Flipkart Affiliate API, “best offers” feed</td><td>All categories</td><td>80</td></tr>
+          <tr><td><code>myntra</code></td><td>Myntra affiliate JSON feed</td><td>Fixed fashion feed</td><td>80</td></tr>
+          <tr><td><code>cuelinks</code></td><td>Cuelinks Offers API (many merchants)</td><td>None</td><td>100</td></tr>
+          <tr><td><code>inrdeals</code></td><td>INRDeals Deal Feed API (many merchants)</td><td>None</td><td>100</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>How a run works</h4>
+      <ol class="steps">
+        <li><strong>Trigger.</strong> Manual dispatch only; the 30-minute schedule is commented out. The admin panel's “Run scraper” button only records a queued run that nothing picks up.</li>
+        <li><strong>Setup.</strong> Check out the repo, set up Node 20, install the whole monorepo and generate the Prisma client.</li>
+        <li><strong>Fetch.</strong> Adapters run one after another. Each makes one request (first page only), with retries and backoff.</li>
+        <li><strong>Per item.</strong> Skip it if its URL (host and path) matches a live deal; drop it if the price is missing, zero or implausible; otherwise create or update a <code>ScrapedDeal</code> in <code>PENDING_REVIEW</code>, keyed on source and external id.</li>
+        <li><strong>Record.</strong> A <code>ScraperRun</code> row stores the found and new counts, or an error.</li>
+        <li><strong>Review.</strong> At <code>/admin/scraper</code> the queue shows pending items <strong>newest first, capped at 100</strong>. The admin must pick a category, then approves or rejects.</li>
+        <li><strong>Publish.</strong> Approval creates an <code>ACTIVE</code>, verified <code>Deal</code> authored by the admin, writes one price-history point, and posts to Telegram if the discount is at least 20% (or there is no price).</li>
+      </ol>
+
+      <div class="grid">
+        <div class="card"><span class="icon">🏷️</span><h4>No category filter</h4><p>No source is asked for our categories (only the Myntra feed is on-niche by construction). The raw category is stored but never used; a human picks the category at approval. An estimated 75–90% of items would be off-niche for a beauty-first launch (estimate).</p></div>
+        <div class="card"><span class="icon">📋</span><h4>No ranking before review</h4><p>The queue is newest-first and capped at 100; anything beyond row 100 is invisible. Approved deals start with hot score 0 and a posted time equal to the approval time.</p></div>
+        <div class="card"><span class="icon">⌛</span><h4>No expiry</h4><p>Scraped deals never get an expiry time, so they stay <code>ACTIVE</code> until the community or an admin expires them.</p></div>
+        <div class="card"><span class="icon">🔇</span><h4>Silent failures</h4><p>An adapter that fails to fetch returns an empty list, so the run is recorded as completed with 0 found.</p></div>
+      </div>
+
+      <h4>Measured runs (GitHub Actions, June 2026)</h4>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Measure</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>Runs</td><td>50 runs between 12 and 14 June 2026 (48 failed, 2 succeeded). The run logs have since expired, so ingest counts can't be proven.</td></tr>
+          <tr><td>Whole run</td><td>Median <strong>47 s</strong> (range 42–59 s)</td></tr>
+          <tr><td>Setup before the scraper starts</td><td>About <strong>40 s</strong> (37–50 s), of which installing dependencies is about 29 s. Setup is about 85% of every run.</td></tr>
+          <tr><td>Scraper step</td><td><strong>1–6 s</strong> (median 1 s): every adapter skipped, because no key is set</td></tr>
+          <tr><td>Schedule</td><td><span class="badge gap">Paused</span> since 14 June 2026</td></tr>
+          <tr><td>Feed keys configured</td><td><span class="badge gap">None</span> so there has been no real supply yet</td></tr>
+        </tbody>
+      </table></div>
+      <p>With keys set, a run is estimated at 1.5–2.5 minutes (estimate). End to end, the machine path takes minutes while human review takes hours (estimate), so review is the bottleneck.</p>
+    </section>
+
+    <!-- ───────────────────────── 6. Ranking ───────────────────────── -->
+    <section id="ranking">
+      <h2><span class="num">6</span>Ranking &amp; community trust</h2>
+      <p class="intro">The Hot feed rewards deals that collect votes quickly and lets them fade with age, so fresh, genuinely good deals rise to the top.</p>
+
+      <div class="callout">
+        <strong>Hot score</strong>
+        <code>hotScore = (upvotes − downvotes) / (ageInHours + 2)<sup>1.5</sup></code><br>
+        Updated on every vote and recomputed for all live deals every hour.
+      </div>
+
+      <div class="grid">
+        <div class="card"><span class="icon">💥</span><h4>LOOT</h4><p>Badge at hot score &gt; 5. Separately, users who saved a deal get a “just went LOOT” push when it crosses 2.</p></div>
+        <div class="card"><span class="icon">🔥</span><h4>HOT</h4><p>Badge at hot score &gt; 2.</p></div>
+        <div class="card"><span class="icon">☀️</span><h4>WARM</h4><p>Badge at hot score &gt; 0.5.</p></div>
+        <div class="card"><span class="icon">✈️</span><h4>Telegram</h4><p>Auto-posted to the channel the first time its hot score reaches 10.</p></div>
+      </div>
+      <p>“Loot” currently means four different thresholds in different parts of the code (badge, push, Telegram and share card). The homepage Loot section shows deals with hot score above 2 or a discount of 40% or more.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart TD
+  V["👍 / 👎 vote<br/>one per user per deal"] --> C["Recount up and down votes"]
+  C --> H["Recompute hot score"]
+  C --> REP["Poster reputation<br/>+1 per up, −1 per down"]
+  H --> B{{"Badge"}}
+  B -->|"> 5"| L["LOOT"]
+  B -->|"> 2"| HOT["HOT"]
+  B -->|"> 0.5"| WARM["WARM"]
+  H --> T{{"Crossed 10<br/>for the first time?"}}
+  T -->|yes| TG["Post to Telegram channel"]
+  SV["✔️ WORKING / ❌ EXPIRED vote"] --> E{{"≥ 10 expired and<br/>≥ 2× working?"}}
+  E -->|yes| EX["Deal marked EXPIRED"]
+</pre>
+        <figcaption>How a single vote ripples through ranking, reputation and distribution</figcaption>
+      </figure>
+
+      <h3>Trust signals on a deal</h3>
+      <ul>
+        <li><strong>Verified</strong>: deals an admin approves from the scraper review queue are marked verified.</li>
+        <li><strong>Honest pricing</strong>: the “No fake MRP” badge is withheld when the claimed discount is 80% or more; the deal shows a neutral “price checked” state instead.</li>
+        <li><strong>Price history</strong>: price points are recorded, so “all-time low” claims can be checked.</li>
+        <li><strong>Still working?</strong>: live WORKING vs EXPIRED counts, plus coupon-worked counts.</li>
+        <li><strong>Reputation</strong>: contributors build reputation from votes, comments, approvals and referrals, shown on the leaderboard.</li>
+      </ul>
+      <p><span class="badge gap">Gap</span> The deal page's structured data for search engines includes a rating derived from the hot score rather than from real reviews, which contradicts the brand promise.</p>
+    </section>
+
+    <!-- ───────────────────────── 7. Alerts ───────────────────────── -->
+    <section id="alerts">
+      <h2><span class="num">7</span>Alerts &amp; notifications</h2>
+      <p class="intro">Users describe what they want once; scheduled jobs watch new deals and reach them on the channel that fits.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  participant U as Shopper
+  participant C as Web or app
+  participant API as Next.js API
+  participant DB as Postgres
+  participant CR as Vercel cron
+  participant N as Expo Push and Resend
+  U->>C: Create alert (keyword, category, store, min discount, frequency)
+  C->>API: POST /api/alerts
+  API->>DB: Save DealAlert
+  C->>API: Register device push token
+  API->>DB: Save PushToken
+  CR->>API: send-alerts, every 30 min
+  API->>DB: Live deals from the last 31 min and active alerts
+  API->>API: Match each deal against each alert
+  API->>N: Pushes in batches of 100, one email per user
+  N-->>U: New deal matching your alert
+</pre>
+        <figcaption>Instant alerts; daily and weekly alerts are mainly served by the digests</figcaption>
+      </figure>
+      <p>Daily and weekly alerts are also included in the <code>send-alerts</code> runs during the 02:00 UTC hour (Mondays for weekly), but those runs only look at the last 31 minutes of deals. The daily digest is what actually covers the whole day.</p>
+
+      <h3>Channels</h3>
+      <div class="grid">
+        <div class="card"><span class="icon">📲</span><h4>Expo Push <span class="badge gap">Not configured</span></h4><p>Native app notifications. The app's push project is not set up yet, and tapping a notification doesn't open the deal yet.</p></div>
+        <div class="card"><span class="icon">🖥️</span><h4>Web Push <span class="badge gap">Broken</span></h4><p>Browser notifications for PWA users. The current implementation encrypts messages incorrectly and stops at 500 subscribers; a rebuild is planned.</p></div>
+        <div class="card"><span class="icon">✉️</span><h4>Email (Resend) <span class="badge now">Now</span></h4><p>Alert emails and daily and weekly digests.</p></div>
+        <div class="card"><span class="icon">🔔</span><h4>In-app inbox <span class="badge now">Now</span></h4><p>Price drops, comment replies, upvote milestones, expiring saved deals and fulfilled requests.</p></div>
+        <div class="card"><span class="icon">✈️</span><h4>Telegram <span class="badge now">Now</span></h4><p>Channel posts for hot deals and approved scraped deals; bot commands for browsing.</p></div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 8. Jobs ───────────────────────── -->
+    <section id="jobs">
+      <h2><span class="num">8</span>Background jobs</h2>
+      <p class="intro">Eight Vercel cron jobs (configured in <code>apps/web/vercel.json</code>) call HTTP endpoints of the web app, and one GitHub Actions workflow runs the scraper. Schedules are in UTC; India (IST) is UTC+5:30.</p>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Job</th><th>Schedule (UTC)</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>expire-deals</code></td><td>every 15 min</td><td>Marks every <code>ACTIVE</code> deal whose expiry time has passed as <code>EXPIRED</code>, in one bulk update.</td></tr>
+          <tr><td><code>send-alerts</code></td><td>every 30 min</td><td>Matches <code>ACTIVE</code> deals posted in the last 31 minutes against active alerts; sends Expo pushes in batches of 100 and one email per user.</td></tr>
+          <tr><td><code>expiry-alerts</code></td><td>every 30 min</td><td>Finds saved deals expiring within 2 hours and notifies the savers by push and in-app message, once per deal.</td></tr>
+          <tr><td><code>price-watch-check</code></td><td>hourly, :00</td><td>For each active price watch, looks for a deal at or below the target price; notifies by push, email and in-app, then switches the watch off (one-shot). Runs even though the watchlist page is flagged off.</td></tr>
+          <tr><td><code>recalc-hotscores</code></td><td>hourly, :00</td><td>Recomputes the hot score of every <code>ACTIVE</code> deal so decay applies without new votes; sends “just went LOOT” pushes to savers when a deal crosses 2.</td></tr>
+          <tr><td><code>daily-digest</code></td><td>daily 08:00 (13:30 IST)</td><td>Emails the top deals of the last 24 hours, personalised to each user's daily alerts; also sends the top deal as a web push to all subscribers.</td></tr>
+          <tr><td><code>weekly-digest</code></td><td>Mondays 09:00 (14:30 IST)</td><td>Emails the week's top 10 deals by hot score to users with active alerts.</td></tr>
+          <tr><td><code>sale-event-alerts</code></td><td>daily 08:00 (13:30 IST)</td><td>Emails users subscribed to a sale event that starts within 24 hours, plus a web push to all subscribers. Runs even though the sale calendar is meant to be hidden.</td></tr>
+          <tr><td><code>scraper.yml</code> (GitHub Actions)</td><td><span class="badge gap">Paused</span> (was every 30 min)</td><td>Runs the five scraper adapters into the review queue. Manual dispatch only since 14 June 2026; 10-minute job limit.</td></tr>
+        </tbody>
+      </table></div>
+      <p>Every cron handler reports failures to Sentry. None of them takes a lock or records its last successful run, and several fire at the same minute; see <a href="architecture.html#jobs">Background jobs topology</a>. Whether the Vercel plan honours the sub-daily schedules could not be confirmed from the code.</p>
+    </section>
+
+    <!-- ───────────────────────── 9. Data model ───────────────────────── -->
+    <section id="data">
+      <h2><span class="num">9</span>Data model</h2>
+      <p class="intro">PostgreSQL on Neon, accessed through Prisma. 33 models and 11 enums. An entity-relationship diagram of the core models is on the <a href="architecture.html#data">Architecture</a> page.</p>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Domain</th><th>Models</th></tr></thead>
+        <tbody>
+          <tr><td>Users &amp; auth</td><td><code>User</code>, <code>Account</code>, <code>Session</code>, <code>VerificationToken</code></td></tr>
+          <tr><td>Catalogue</td><td><code>Category</code>, <code>Store</code> (with cashback rate and scraper toggle), <code>BankOffer</code>, <code>Tag</code>, <code>SaleEvent</code></td></tr>
+          <tr><td>Deals</td><td><code>Deal</code>, <code>DealTag</code>, <code>PriceHistory</code>, <code>Collection</code>, <code>CollectionDeal</code></td></tr>
+          <tr><td>Community</td><td><code>Vote</code>, <code>DealStatusVote</code>, <code>Comment</code>, <code>CommentLike</code>, <code>Report</code>, <code>PurchaseConfirmation</code>, <code>DealRequest</code>, <code>DealRequestUpvote</code></td></tr>
+          <tr><td>Personal</td><td><code>SavedDeal</code>, <code>DealAlert</code>, <code>ProductWatch</code>, <code>SearchLog</code></td></tr>
+          <tr><td>Notifications</td><td><code>PushToken</code>, <code>WebPushSubscription</code>, <code>InAppNotification</code></td></tr>
+          <tr><td>Referrals</td><td><code>UserReferral</code>, <code>ReferralCode</code> (community-shared store referral codes)</td></tr>
+          <tr><td>Ingestion</td><td><code>ScrapedDeal</code> (review queue), <code>ScraperRun</code> (run log)</td></tr>
+        </tbody>
+      </table></div>
+
+      <details>
+        <summary>Key enums</summary>
+        <div class="table-wrap"><table>
+          <tbody>
+            <tr><th>DealStatus</th><td>PENDING · ACTIVE · EXPIRED · REJECTED · FRONTPAGE (defined, never set by any code path)</td></tr>
+            <tr><th>ModerationStatus</th><td>PENDING · AUTO_APPROVED · AUTO_REJECTED · NEEDS_REVIEW · ADMIN_APPROVED · ADMIN_REJECTED</td></tr>
+            <tr><th>ScrapedDealStatus</th><td>PENDING_REVIEW · APPROVED · REJECTED · DUPLICATE (defined, never set)</td></tr>
+            <tr><th>VoteType</th><td>UP · DOWN</td></tr>
+            <tr><th>DealStatusVoteType</th><td>WORKING · EXPIRED</td></tr>
+            <tr><th>AlertFrequency</th><td>INSTANT · DAILY · WEEKLY</td></tr>
+            <tr><th>ReportReason</th><td>SPAM · EXPIRED · DUPLICATE · MISLEADING · INAPPROPRIATE · OTHER</td></tr>
+            <tr><th>ReportStatus</th><td>PENDING · REVIEWED · RESOLVED · DISMISSED</td></tr>
+            <tr><th>DealRequestStatus</th><td>OPEN · FULFILLED · CLOSED</td></tr>
+            <tr><th>UserRole</th><td>USER · ADMIN · SUPERADMIN</td></tr>
+            <tr><th>Country</th><td>IN (active) · PK · BD · LK · NP · ALL (reserved)</td></tr>
+          </tbody>
+        </table></div>
+      </details>
+
+      <p>
+        Schema changes go through versioned Prisma migrations (five so far, <code>0_init</code> to
+        <code>4_add_searchlog_userid</code>); CI fails if the schema and the migration history drift apart.
+        The seed creates 11 categories (beauty &amp; health, fashion, baby &amp; kids, electronics, …) and
+        Indian stores, of which Amazon India, Flipkart and Myntra are marked scraper-enabled (the scraper
+        doesn't read that toggle yet).
+      </p>
+    </section>
+
+    <!-- ───────────────────────── 10. Clients ───────────────────────── -->
+    <section id="clients">
+      <h2><span class="num">10</span>Apps &amp; clients</h2>
+
+      <h3>Web app: page map</h3>
+      <p>67 pages and 65 API route handlers (App Router).</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Area</th><th>Routes</th></tr></thead>
+        <tbody>
+          <tr><td>Feeds</td><td><code>/</code>, <code>/deals/top</code>, <code>/deals/today</code>, <code>/deals/new</code>, <code>/deals/price-drops</code>, <code>/deals/expiring-soon</code>, <code>/deals/freebies</code>, <code>/deals/best-of-month</code>, <code>/expiring-today</code></td></tr>
+          <tr><td>Deal</td><td><code>/deals/[slug]</code> (with structured product and offer data for search engines)</td></tr>
+          <tr><td>Discovery &amp; SEO</td><td><code>/search</code>, <code>/categories/[slug]</code>, <code>/stores/[slug]</code>, <code>/stores/[slug]/[category]</code>, <code>/under/[price]</code>, <code>/deals/under/[budget]</code>, <code>/sales/[slug]</code>, <code>/coupons</code>, vertical pages (student, grocery, gaming, gift cards…), <code>/rss.xml</code>, sitemap</td></tr>
+          <tr><td>Contribute</td><td><code>/submit</code>, <code>/deals/[slug]/edit</code>, <code>/requests</code>, <code>/leaderboard</code>, <code>/users/[id]</code></td></tr>
+          <tr><td>Personal</td><td><code>/login</code>, <code>/register</code>, <code>/profile</code>, <code>/alerts</code>, <code>/saved</code>, <code>/watchlist</code>, <code>/notifications</code></td></tr>
+          <tr><td>Admin</td><td><code>/admin</code>, <code>/admin/scraper</code>, <code>/admin/reports</code>, <code>/admin/stores</code>, <code>/admin/categories</code>, <code>/admin/collections</code>, <code>/admin/users</code>, <code>/admin/analytics</code>, <code>/admin/watchlist</code></td></tr>
+          <tr><td>Info</td><td><code>/about</code>, <code>/guidelines</code>, <code>/telegram</code>, <code>/privacy</code>, <code>/terms</code>, <code>/contact</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>Nine vertical landing pages (finance, gaming, hosting, student, gift cards, home services, grocery, IPL, summer sale) sit outside the beauty-first niche; three of them are fully hard-coded. Their future is an open owner decision.</p>
+
+      <h3>Native app (Expo) <span class="badge planned">Not in stores</span></h3>
+      <div class="grid">
+        <div class="card"><span class="icon">📈</span><h4>Deals</h4><p>Hot / New / Top / Discussed / Fresh tabs, category pills, a “flash” strip of deals expiring within 6 h, one-tap vote, save and coupon copy.</p></div>
+        <div class="card"><span class="icon">🔍</span><h4>Search</h4><p>Debounced search with sort options, coupon filter and recent searches.</p></div>
+        <div class="card"><span class="icon">➕</span><h4>Post</h4><p>Opens the web submit form in an in-app sheet, so there's a single submission flow.</p></div>
+        <div class="card"><span class="icon">🔔</span><h4>Alerts</h4><p>Manage alerts, with one-tap templates.</p></div>
+        <div class="card"><span class="icon">👤</span><h4>Profile</h4><p>Sign in and out, account details, and a link to saved deals.</p></div>
+        <div class="card"><span class="icon">🏷️</span><h4>Deal detail</h4><p>Price sparkline, coupon, bank offer, cashback, comments and replies, “still working?” votes, share.</p></div>
+      </div>
+      <p><span class="badge gap">Gap</span> Before a store release the app still needs its push project configured, and fixes to crash-class bugs and to the deal screen, which doesn't yet load the user's own vote and save state.</p>
+
+      <h4>How the app signs in</h4>
+      <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  participant App as Expo app
+  participant B as In-app browser
+  participant W as SnatchPicks web
+  participant MW as Middleware
+  App->>B: Open /api/mobile/auth with redirect and random state
+  B->>W: User signs in (Google or email and password)
+  W-->>B: Redirect to snatchpicks://auth with token and state
+  B-->>App: Token returned to the app
+  App->>App: Verify state, store token in SecureStore
+  App->>MW: API request with Authorization Bearer token
+  MW->>W: Converted to a normal session, auth works unchanged
+</pre>
+        <figcaption>Cookies from the in-app browser aren't visible to native requests, so the app carries the session token itself; only the app's own URL scheme is accepted as a redirect target</figcaption>
+      </figure>
+
+      <h3>Browser extension <span class="badge planned">Unpublished</span></h3>
+      <ul>
+        <li>Detects product pages on 19 retailer sites (Amazon.in, Flipkart, Myntra, Ajio, Nykaa, Meesho, Croma, Tata CLiQ, JioMart, BigBasket and more).</li>
+        <li>Shows a badge with the SnatchPicks discount or available cashback; the popup shows price, price history (with an “all-time low” marker), bank offer and coupon.</li>
+        <li>At checkout it shows a coupon panel: “Try” fills and applies the code, “Copy” copies it.</li>
+        <li>Lets signed-in users set a price alert, or submit the current product as a new deal.</li>
+        <li><span class="badge gap">Gap</span> The build still calls an old domain, so it must be repointed before it is published.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 11. Platform ───────────────────────── -->
+    <section id="platform">
+      <h2><span class="num">11</span>Platform &amp; DevOps</h2>
+
+      <h3>Repository layout</h3>
+<pre class="tree">snatchpicks/                 Turborepo · npm workspaces
+├── apps/
+│   ├── web/                 Next.js 15 site + API + cron handlers   (workspace)
+│   ├── mobile/              Expo SDK 51 app                         (standalone)
+│   ├── extension/           Chrome MV3 extension                    (plain JS)
+│   └── marketing/           Static landing page                     (plain HTML)
+├── packages/
+│   ├── database/            Prisma schema, migrations, seed
+│   ├── scraper/             Feed adapters + runner
+│   └── config/              Shared TS / ESLint / Tailwind presets
+├── scripts/                 CI guard scripts
+└── .github/workflows/       ci.yml · scraper.yml</pre>
+
+      <h3>Pipeline</h3>
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  DEV["Commit"] --> HOOK["Pre-commit<br/>Prettier + ESLint"]
+  HOOK --> PR["Push / PR to main"]
+  PR --> CI
+  subgraph CI["GitHub Actions · CI"]
+    direction TB
+    I["npm ci + prisma generate"] --> TC["Type-check all workspaces"]
+    TC --> PV["Validate schema"]
+    PV --> DR["Migration drift check<br/>against a Postgres 16 container"]
+    DR --> AG["Admin-guard check<br/>every admin route must authorize"]
+    AG --> T["Vitest tests"]
+    T --> LI["Lint"]
+  end
+  PR --> VC["Vercel build<br/>turbo build of apps/web"]
+  VC --> LIVE["Production"]
+  MIG["Manual migration step"] -.-> DBX[("Postgres")]
+  DISPATCH["Manual dispatch<br/>schedule paused"] --> SJ["GitHub Actions · Scraper"]
+  SJ --> DBX
+</pre>
+        <figcaption>CI and the Vercel build run side by side; nothing makes the deploy wait for CI</figcaption>
+      </figure>
+
+      <h3>Platform facts</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Area</th><th>Today</th></tr></thead>
+        <tbody>
+          <tr><td>Function region</td><td><span class="badge gap">Gap</span> No region is configured, so functions run in Vercel's default US East region, far from users in India. That costs an estimated 200 ms or more per request (estimate).</td></tr>
+          <tr><td>Database</td><td>Neon Postgres through Prisma. Its region has not been confirmed.</td></tr>
+          <tr><td>Environments</td><td><span class="badge gap">Gap</span> No staging environment and no separate preview database.</td></tr>
+          <tr><td>Migrations</td><td><span class="badge gap">Gap</span> Production migrations are applied by hand. The Vercel build only generates the Prisma client.</td></tr>
+          <tr><td>Deploy gate</td><td><span class="badge gap">Gap</span> Vercel deploys <code>main</code> independently of CI, and <code>main</code> has no branch protection.</td></tr>
+          <tr><td>CI</td><td><span class="badge now">Green</span> Type-check, schema validation, migration drift, admin-guard check, tests and lint all pass as of 2026-11-11 (latest run on commit <code>736a0b91</code>). Before that, CI had been failing on <code>main</code>.</td></tr>
+          <tr><td>Tests</td><td>Vitest unit tests for critical library logic (moderation, hot score, alerts, expiry consensus, guards, referral, slug, utils) plus scraper tests. No API-route tests; the mobile app and extension aren't type-checked in CI.</td></tr>
+          <tr><td>Observability</td><td>Sentry in the web app (server, edge, client) and the scraper. <span class="badge gap">Gap</span> No health endpoint, uptime monitor, product analytics or job history.</td></tr>
+          <tr><td>Domain</td><td><span class="badge gap">Gap</span> The site is served from its <code>vercel.app</code> address; the canonical <code>snatchpicks.com</code> isn't pointed at Vercel yet.</td></tr>
+          <tr><td>Security</td><td>Rate limiting, centralised admin checks, security headers and validated configuration are in place. Further security hardening is tracked privately.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Operations &amp; safeguards</h3>
+      <div class="grid">
+        <div class="card"><span class="icon">🩺</span><h4>Observability</h4><p>Sentry in the web app and the scraper; every cron job reports failures.</p></div>
+        <div class="card"><span class="icon">🚦</span><h4>Rate limiting</h4><p>Upstash Redis sliding windows per IP on write endpoints, plus a per-user submission cap.</p></div>
+        <div class="card"><span class="icon">🔐</span><h4>Security headers</h4><p>Content security policy, HSTS, frame denial, and strict referrer and permissions policies on every response.</p></div>
+        <div class="card"><span class="icon">✅</span><h4>Config validation</h4><p>Configuration is validated with Zod at startup, so a bad deploy fails fast.</p></div>
+        <div class="card"><span class="icon">🧭</span><h4>SEO hygiene</h4><p>Sitemap and footer are generated from the filesystem and database, not hand-maintained.</p></div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── 12. Stack ───────────────────────── -->
+    <section id="stack">
+      <h2><span class="num">12</span>Tech stack</h2>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Layer</th><th>Choice</th></tr></thead>
+        <tbody>
+          <tr><td>Monorepo</td><td>Turborepo 2, npm 10 workspaces, Node ≥ 20, TypeScript 5</td></tr>
+          <tr><td>Web</td><td>Next.js 15 (App Router), React 19, Tailwind CSS 4</td></tr>
+          <tr><td>Auth</td><td>NextAuth v5 beta (JWT sessions; Google + email/password)</td></tr>
+          <tr><td>Database</td><td>PostgreSQL on Neon, Prisma 6</td></tr>
+          <tr><td>Rate limiting</td><td>Upstash Redis (<code>@upstash/ratelimit</code>)</td></tr>
+          <tr><td>Validation</td><td>Zod</td></tr>
+          <tr><td>Moderation</td><td>OpenAI <code>gpt-4o-mini</code>, Google Safe Browsing</td></tr>
+          <tr><td>Notifications</td><td>Expo Push, Web Push, Resend email, Telegram Bot API</td></tr>
+          <tr><td>Images</td><td>Cloudinary</td></tr>
+          <tr><td>Mobile</td><td>Expo SDK 51, React Native 0.74, Expo Router 3, TanStack Query 5, NativeWind 4, EAS Build</td></tr>
+          <tr><td>Extension</td><td>Chrome Manifest V3 (vanilla JS)</td></tr>
+          <tr><td>Scraper</td><td>Node + TypeScript (<code>tsx</code>), axios; Keepa, Flipkart Affiliate, Myntra, Cuelinks, INRDeals</td></tr>
+          <tr><td>Hosting &amp; jobs</td><td>Vercel (web + cron), GitHub Actions (CI + scraper)</td></tr>
+          <tr><td>Quality</td><td>Vitest, ESLint, Prettier, Husky + lint-staged, Sentry</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 13. Limitations ───────────────────────── -->
+    <section id="limitations">
+      <h2><span class="num">13</span>Known limitations</h2>
+      <p class="intro">The main gaps today. What to do about each, and in what order, is on the <a href="recommendations.html">Recommendations</a> page.</p>
+      <ul>
+        <li><span class="badge gap">Supply</span> No automated deal supply: the scraper is paused and has no feed key. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Moderation</span> The duplicate check matches a new submission against itself, so ordinary submissions are auto-rejected. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Deal page</span> Pending, rejected and <code>FRONTPAGE</code> deals all show as “expired”, and the page's search-engine rating is not based on real reviews. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Scraper</span> Silent fetch failures, no category filter, an unsorted queue capped at 100, and scraped deals that never expire. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Notifications</span> App push not configured; tapping a push doesn't open the deal; Web Push is broken. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Accounts</span> No password reset or email verification; onboarding never appears for signed-in users. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Speed</span> Functions run in US East, pages are almost never cached, and the homepage runs 13 queries it never renders (1.7 s time to first byte, measured cold). <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Jobs</span> Cron jobs have no locks or run history, and overlapping windows can double-send. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Flags</span> Four of the eight flags gate nothing, and the other four hide only a page. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Delivery</span> No staging, manual production migrations, and no deploy gate on CI. <a href="recommendations.html">Recommendation →</a></li>
+        <li><span class="badge gap">Security</span> Security hardening (tracked privately). <a href="recommendations.html">Recommendation →</a></li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 14. Glossary ───────────────────────── -->
+    <section id="glossary">
+      <h2><span class="num">14</span>Glossary</h2>
+      <div class="table-wrap"><table>
+        <tbody>
+          <tr><th>MRP</th><td>Maximum Retail Price, the printed list price in India. Inflated MRPs are the most common way deal listings fake big discounts.</td></tr>
+          <tr><th>Hot score</th><td>Net votes divided by an age-decay factor; drives the Hot feed.</td></tr>
+          <tr><th>LOOT / HOT / WARM</th><td>Badges for hot scores above 5, 2 and 0.5.</td></tr>
+          <tr><th>YMMV</th><td>“Your mileage may vary”: the deal may not work for everyone (location, account, card).</td></tr>
+          <tr><th>Status vote</th><td>A WORKING / EXPIRED vote, separate from 👍/👎, used to retire dead deals.</td></tr>
+          <tr><th>ScrapedDeal</th><td>An offer pulled from a partner feed, waiting in the admin review queue.</td></tr>
+          <tr><th>Bank offer</th><td>Extra instant discount for paying with a specific bank's card.</td></tr>
+          <tr><th>Stacking</th><td>Combining a deal with a coupon, bank offer and cashback for the lowest final price.</td></tr>
+          <tr><th>Affiliate-only store</th><td>A store linked with affiliate tracking but not scraped (e.g. Nykaa, Meesho).</td></tr>
+          <tr><th>Tier 1 / 2 / 3</th><td>The feature tier list: maintain the core loop / freeze behind a flag / hide, then cut.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <footer>
+      Reflects the SnatchPicks codebase as of commit <code>736a0b91</code>, November 2026. Diagrams rendered with Mermaid.
+    </footer>
+  </main>
+</div>
+</body>
+</html>

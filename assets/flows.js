@@ -47,7 +47,7 @@ const JOURNEY = [
   },
   {
     icon: "🔔", title: "Alerted", actor: "send-alerts job → Rahul",
-    text: "Rahul has an alert for “earbuds”, at least 50% off. Within 30 minutes the alert job matches the new deal and his phone buzzes.",
+    text: "Rahul has an alert for “earbuds”, at least 50% off. Within 30 minutes the alert job matches the new deal and sends it to him: by email today, and as a phone push once app push is configured for the store builds.",
     tech: ["Vercel cron (every 30 min)", "Expo Push", "Resend email"],
     state: { status: "ACTIVE", checks: { url: 1, dup: 1, price: 1, ai: 1 }, toast: true },
   },
@@ -248,8 +248,8 @@ const SCENARIOS = [
     id: "submit", label: "📝 Submit a deal",
     steps: [
       ["browser", "mw", "Priya submits the deal form. Middleware sees a signed-in user on a write endpoint."],
-      ["mw", "redis", "It checks her per-IP rate limit in Redis (5 submissions a minute)."],
-      ["mw", "web", "The request reaches POST /api/deals, which also caps users at 3 deals an hour."],
+      ["mw", "redis", "It checks the per-IP rate limit for submissions in Redis."],
+      ["mw", "web", "The request reaches POST /api/deals, which also caps each user at 3 deals an hour."],
       ["web", "db", "The deal is saved as PENDING, along with its first price-history point."],
       ["web", "gsb", "Moderation step 1: is the link malware or phishing?"],
       ["web", "db", "Steps 2–3: is the URL already live, and is the price honest (no fake MRP)?"],
@@ -261,11 +261,11 @@ const SCENARIOS = [
   {
     id: "alert", label: "🔔 Instant alert",
     steps: [
-      ["cron", "web", "Every 30 minutes Vercel calls the send-alerts job (secured with a shared secret)."],
+      ["cron", "web", "Every 30 minutes Vercel cron calls the send-alerts job."],
       ["web", "db", "It loads deals that went live in the last 31 minutes and every active alert."],
       ["web", "web", "Each deal is matched on keyword, category, store and minimum discount."],
       ["web", "push", "Matching users' devices are notified through Expo Push, in batches of 100."],
-      ["push", "app", "Rahul's phone buzzes; tapping opens the deal in the app."],
+      ["push", "app", "Rahul's phone buzzes (once app push is configured). Opening the deal from the notification is still being fixed."],
       ["web", "mail", "He also gets one email summarising his matches."],
     ],
   },
@@ -273,7 +273,7 @@ const SCENARIOS = [
     id: "vote", label: "👍 Upvote",
     steps: [
       ["app", "mw", "Rahul taps 👍 in the app. The request carries his Bearer token."],
-      ["mw", "redis", "Middleware rate-limits votes (30 a minute per IP)…"],
+      ["mw", "redis", "Middleware applies the per-IP rate limit for votes…"],
       ["mw", "web", "…and turns the Bearer token into a normal session for POST /api/votes."],
       ["web", "db", "The vote is upserted, totals recounted, the hot score recomputed and the poster's reputation updated."],
       ["web", "tg", "If the hot score just crossed 10, the deal is auto-posted to the Telegram channel."],
@@ -306,7 +306,7 @@ const SCENARIOS = [
   {
     id: "extension", label: "🧩 Extension lookup",
     steps: [
-      ["ext", "mw", "On a product page (say Amazon.in), the extension asks SnatchPicks about this URL."],
+      ["ext", "mw", "On a product page (say Amazon.in), the extension asks SnatchPicks about this URL. (The unpublished build still points at an old domain; that is fixed before publishing.)"],
       ["mw", "web", "GET /api/extension handles the lookup."],
       ["web", "db", "It finds a matching live deal, its price history and the store's cashback."],
       ["web", "ext", "The toolbar badge shows the discount; the popup shows price history and coupons."],

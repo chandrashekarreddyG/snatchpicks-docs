@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnatchPicks — Architecture</title>
+  <meta name="description" content="SnatchPicks architecture: system context, request lifecycle, today's layers vs the target design, deployment, data, and the user, deal and feature lifecycles.">
+  <meta property="og:title" content="SnatchPicks — Architecture">
+  <meta property="og:description" content="How SnatchPicks is built today and where it is heading, with the user, deal and feature lifecycles drawn end to end.">
+  <meta name="theme-color" content="#f97316">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
+  <link rel="stylesheet" href="assets/style.css">
+  <script type="module" src="assets/site.js"></script>
+  <script type="module" src="assets/flows.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <a class="brand" href="index.html">Snatch<span>Picks</span></a>
+    <ul class="site-nav">
+      <li><a href="index.html">Overview</a></li>
+      <li><a href="current.html">Current implementation</a></li>
+      <li><a href="architecture.html" class="active" aria-current="page">Architecture</a></li>
+      <li><a href="recommendations.html">Recommendations</a></li>
+    </ul>
+    <ol>
+      <li><a href="#context">System context</a></li>
+      <li><a href="#request">Request lifecycle</a></li>
+      <li><a href="#layers">Layers: today vs target</a></li>
+      <li><a href="#deployment">Deployment topology</a></li>
+      <li><a href="#data">Data architecture</a></li>
+      <li><a href="#user-lifecycle">User lifecycle</a></li>
+      <li><a href="#deal-lifecycle">Product (deal) lifecycle</a></li>
+      <li><a href="#feature-lifecycle">Feature lifecycle</a></li>
+      <li><a href="#jobs">Background jobs topology</a></li>
+    </ol>
+  </nav>
+
+  <main id="top">
+    <header class="hero">
+      <div class="eyebrow">Architecture</div>
+      <h1>How Snatch<span>Picks</span> is built</h1>
+      <p class="lead">
+        One Next.js application on Vercel is both the website and the API. Every client talks to it,
+        one Postgres database is the source of truth, and background work runs on cron. This page
+        shows that shape today, the target it is moving towards, and three lifecycles end to end.
+      </p>
+      <div class="pills">
+        <span class="pill"><span class="badge now">Now</span> how it works today</span>
+        <span class="pill"><span class="badge target">Target</span> proposed design</span>
+        <span class="pill"><span class="badge planned">Planned</span> not built yet</span>
+        <span class="pill"><span class="badge gap">Gap</span> known gap</span>
+      </div>
+    </header>
+
+    <!-- ───────────────────────── 1. Context ───────────────────────── -->
+    <section id="context">
+      <h2><span class="num">1</span>System context &amp; containers</h2>
+      <p class="intro">Shoppers arrive from social channels and search, use one of three clients, and everything flows through edge middleware into the web app. Jobs run on two schedulers; data lives in Postgres, with Redis for rate limiting.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph Entry["Entry channels"]
+    IG["📸 Instagram"]
+    TGC["✈️ Telegram channel"]
+    GG["🔎 Google search"]
+    SH["🔗 Share links"]
+  end
+  subgraph Clients
+    BR["🌐 Browser / PWA"]
+    APP["📲 Expo app"]
+    EXT["🧩 Chrome extension"]
+  end
+  subgraph Vercel["Vercel"]
+    MW["Edge middleware<br/>admin check · rate limits<br/>Bearer to session"]
+    WEB["apps/web · Next.js 15<br/>pages + API routes"]
+    CRON["Vercel cron<br/>8 jobs"]
+  end
+  subgraph GHA["GitHub Actions"]
+    SCR["Scraper<br/>5 adapters · paused"]
+  end
+  subgraph Data["Data stores"]
+    DB[("Neon Postgres<br/>Prisma · 33 models")]
+    RD[("Upstash Redis<br/>rate-limit counters")]
+  end
+  subgraph External["External services"]
+    AI["OpenAI gpt-4o-mini"]
+    GSB["Google Safe Browsing"]
+    PUSH["Expo Push · Web Push"]
+    MAIL["Resend email"]
+    TGB["Telegram Bot API"]
+    IMG["Cloudinary"]
+    SEN["Sentry"]
+  end
+  FD["Partner feeds<br/>Keepa · Flipkart · Myntra<br/>Cuelinks · INRDeals"]
+  IG --> BR
+  TGC --> BR
+  GG --> BR
+  SH --> BR
+  BR --> MW
+  APP -->|"Bearer token"| MW
+  EXT --> MW
+  MW --> RD
+  MW --> WEB
+  CRON --> WEB
+  WEB --> DB
+  WEB --> AI
+  WEB --> GSB
+  WEB --> PUSH
+  WEB --> MAIL
+  WEB --> TGB
+  WEB --> IMG
+  WEB --> SEN
+  SCR --> FD
+  SCR --> DB
+  SCR --> SEN
+</pre>
+        <figcaption>System context: entry channels, clients, the Vercel app, jobs, data stores, external services and partner feeds</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Container</th><th>Where</th><th>Responsibility</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Web client / PWA</td><td>Browser</td><td>The primary destination: feeds, deal pages, submit, alerts, admin console.</td><td><span class="badge now">Live</span></td></tr>
+          <tr><td>Native app</td><td><code>apps/mobile</code> (Expo)</td><td>Thin client over the same API. Signs in through an in-app browser and sends the session token as a Bearer header.</td><td><span class="badge planned">Not in stores</span></td></tr>
+          <tr><td>Chrome extension</td><td><code>apps/extension</code> (MV3)</td><td>Deal, price history and coupon lookup on 19 retailer sites.</td><td><span class="badge planned">Unpublished</span></td></tr>
+          <tr><td>Edge middleware</td><td><code>apps/web/src/middleware.ts</code></td><td>Runs before pages and API routes: checks the signed session token for admin areas, applies per-IP rate limits, turns the app's Bearer token into a normal session.</td><td><span class="badge now">Now</span></td></tr>
+          <tr><td>Web app (pages + API)</td><td><code>apps/web</code> on Vercel</td><td>67 pages and 65 API route handlers. Renders the site, serves JSON to the app and extension, runs moderation, sends notifications.</td><td><span class="badge now">Now</span></td></tr>
+          <tr><td>Background jobs</td><td>Vercel cron + GitHub Actions</td><td>8 cron endpoints (expiry, alerts, digests, hot scores, price watch, sale events) and the scraper workflow.</td><td><span class="badge now">Now</span> · scraper <span class="badge gap">Paused</span></td></tr>
+          <tr><td>Postgres</td><td>Neon, via Prisma 6</td><td>The single source of truth: 33 models, 11 enums, versioned migrations.</td><td><span class="badge now">Now</span></td></tr>
+          <tr><td>Redis</td><td>Upstash</td><td>Sliding-window rate-limit counters only. No caching yet.</td><td><span class="badge now">Now</span></td></tr>
+          <tr><td>External services</td><td>SaaS APIs</td><td>OpenAI (content check, summaries), Google Safe Browsing, Expo Push, Web Push, Resend, Telegram, Cloudinary, Sentry.</td><td><span class="badge now">Now</span></td></tr>
+          <tr><td>Partner feeds</td><td>Affiliate and price APIs</td><td>Keepa (Amazon), Flipkart Affiliate, Myntra feed, Cuelinks, INRDeals.</td><td><span class="badge gap">No key yet</span></td></tr>
+          <tr><td>Marketing page</td><td><code>apps/marketing</code></td><td>Static single-file landing page, deployed separately.</td><td><span class="badge now">Now</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Design decisions worth knowing</h3>
+      <ul>
+        <li><strong>One backend.</strong> The website <em>is</em> the API. The native app and extension are thin clients, and no app-only features ship before product-market fit.</li>
+        <li><strong>JWT sessions plus edge checks.</strong> Admin access is checked centrally in middleware from the signed token, and again in each admin route (a CI script enforces it).</li>
+        <li><strong>Scraped deals never go live automatically.</strong> They land in a review queue, where a human picks the category and approves.</li>
+        <li><strong>Data-driven SEO only.</strong> SEO comes from real deal, store, category and intent pages generated from the database; templated buying guides are banned.</li>
+        <li><strong>No microservices.</strong> The architecture review concluded the shape is right for this stage; what limits scale is what happens inside the app (<a href="#layers">Layers</a>).</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 2. Request ───────────────────────── -->
+    <section id="request">
+      <h2><span class="num">2</span>Request lifecycle</h2>
+      <p class="intro">Choose a scenario and watch it hop between components. The current hop is explained above the map, and every hop is listed below it.</p>
+      <div class="tracer" data-tracer>
+        <noscript><p>Enable JavaScript to see the interactive map; the static diagram is below.</p></noscript>
+      </div>
+      <div class="legend">
+        <span class="lg g-client">Clients</span><span class="lg g-vercel">Vercel</span><span class="lg g-data">Data</span><span class="lg g-jobs">Jobs</span><span class="lg g-ext">External services</span>
+      </div>
+
+      <details>
+        <summary>Static architecture diagram</summary>
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph Clients
+    BR["🌐 Browser / PWA"]
+    APP["📲 Expo app"]
+    EXT["🧩 Chrome extension"]
+  end
+
+  subgraph Vercel["Vercel"]
+    MW["Middleware<br/>roles · rate limits · Bearer→session"]
+    WEB["apps/web · Next.js 15<br/>pages + REST API"]
+    CRON["8 cron jobs<br/>expire · alerts · digests · hot scores"]
+  end
+
+  subgraph Data["Data"]
+    DB[("Neon Postgres<br/>via Prisma 6")]
+    RD[("Upstash Redis<br/>rate limiting")]
+  end
+
+  subgraph GHA["GitHub Actions"]
+    SCR["packages/scraper<br/>5 feed adapters"]
+  end
+
+  subgraph External["External services"]
+    AI["OpenAI<br/>gpt-4o-mini"]
+    GSB["Google Safe Browsing"]
+    PUSH["Expo Push · Web Push"]
+    MAIL["Resend email"]
+    TG["Telegram Bot API"]
+    FEEDS["Keepa · Flipkart · Myntra<br/>Cuelinks · INRDeals"]
+  end
+
+  BR --> MW
+  APP -->|"Bearer token"| MW
+  EXT --> MW
+  MW --> WEB
+  MW --> RD
+  CRON --> WEB
+  WEB --> DB
+  WEB --> AI
+  WEB --> GSB
+  WEB --> PUSH
+  WEB --> MAIL
+  WEB --> TG
+  SCR --> FEEDS
+  SCR --> DB
+</pre>
+        <figcaption>Runtime components and who talks to whom</figcaption>
+      </figure>
+      </details>
+
+      <h3>Anatomy of a request today</h3>
+      <ol class="steps">
+        <li><strong>Edge.</strong> The request reaches Vercel, whose functions run in US East today. Nothing is served from the CDN cache: the homepage, for example, is returned as non-cacheable.</li>
+        <li><strong>Middleware.</strong> Admin paths need an admin role in the signed session token; write endpoints are rate-limited per IP through Redis; an app Bearer token becomes the session cookie.</li>
+        <li><strong>Page or route handler.</strong> Reads the session, applies a guard for user and admin actions, validates the body where a schema exists, and queries Prisma directly. Most pages render the shared header, which reads the session on every render.</li>
+        <li><strong>Side effects.</strong> Telegram posts, in-app notifications, AI summaries and reputation updates run inside the handler, some without being awaited.</li>
+        <li><strong>Response.</strong> Routes return database rows as they are, with no versioned contract, so clients code against the table shape.</li>
+      </ol>
+    </section>
+
+    <!-- ───────────────────────── 3. Layers ───────────────────────── -->
+    <section id="layers">
+      <h2><span class="num">3</span>Layers: today vs target</h2>
+      <p class="intro">Today the business logic lives in route handlers and pages, which talk to the database directly. The target, from the November 2026 architecture review, keeps one Next.js app but adds a shared rules package, a server layer that owns all data access, a handler kit, a versioned API, an outbox and a job runner.</p>
+
+      <div class="compare">
+        <figure class="diagram">
+          <h4>Today <span class="badge now">Now</span></h4>
+<pre class="mermaid">
+flowchart TB
+  C["Clients<br/>web · app · extension"] --> P["Pages and API routes<br/>app/**"]
+  CR["Cron routes"] --> PR
+  CR -->|"HTTP self-call"| P
+  P --> L["lib helpers<br/>moderation · alerts · utils"]
+  P --> PR[("Prisma to Postgres<br/>121 files import it")]
+  L --> PR
+  P -.->|"inline, often unawaited"| SE["Telegram · push<br/>AI summary · reputation"]
+  MB["Mobile app"] -.->|"rules copied by hand"| RU["Pricing and trust rules"]
+  L -.-> RU
+</pre>
+          <figcaption>Logic in routes and pages; direct database access everywhere</figcaption>
+        </figure>
+        <figure class="diagram">
+          <h4>Target <span class="badge target">Target</span></h4>
+<pre class="mermaid">
+flowchart TB
+  W["Web pages and client islands"] --> R["app/api/v1 + pages<br/>thin, via route()"]
+  M["Mobile app"] --> R
+  X["Extension"] --> R
+  R --> S["server/*<br/>domain services"]
+  S --> D[("packages/database<br/>Postgres")]
+  S --> O[("Outbox")]
+  J["server/jobs<br/>locked, resumable"] --> O
+  O --> N["server/notifications<br/>handlers and channels"]
+  R -.-> CO["packages/core<br/>rules + contracts"]
+  S -.-> CO
+  M -.-> CO
+</pre>
+          <figcaption>Only the server layer touches the database; side effects go through the outbox</figcaption>
+        </figure>
+      </div>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Building block</th><th>What it is</th><th>What it fixes</th><th>Phase</th></tr></thead>
+        <tbody>
+          <tr><td><code>packages/core</code> <span class="badge target">Target</span></td><td>Pure TypeScript (zod only): pricing, the fake-MRP rules, hot score, tier thresholds, voting rules, URL normalisation, alert matching, and the v1 contracts (DTOs).</td><td>The fake-MRP rule exists as 3 rule sets plus a copy; “Loot” means 4 thresholds; the discount formula is copied 15 times.</td><td>1</td></tr>
+          <tr><td><code>server/</code> layer <span class="badge target">Target</span></td><td><code>apps/web/src/server/&lt;domain&gt;/</code> modules (deals, voting, moderation, users, admin, seo, telegram, notifications, events, jobs); the only code allowed to import Prisma, enforced by lint.</td><td>121 files import Prisma directly; the deal lifecycle has 4 approval paths and 3 expiry paths with different side effects.</td><td>1 → 5</td></tr>
+          <tr><td><code>route()</code> <span class="badge target">Target</span></td><td>One handler kit: <code>route({ auth, body, query, flag }, fn)</code> with auth modes, one error envelope, a JSON guard and cursor pagination.</td><td>Two error shapes, copied admin checks, inconsistent validation and pagination.</td><td>3</td></tr>
+          <tr><td><code>/api/v1</code> <span class="badge target">Target</span></td><td>Versioned, additive-only API returning DTOs with an explicit field list; legacy routes frozen behind snapshot tests; client version header and a minimum app version.</td><td>Raw database rows returned today; app binaries in the stores would freeze today's shapes.</td><td>3</td></tr>
+          <tr><td>Outbox <span class="badge target">Target</span></td><td>A domain-event table (unique dedupe key) written inside the service transaction and drained by a job, later a queue.</td><td>Inline, unawaited side effects that can be lost or duplicated.</td><td>4</td></tr>
+          <tr><td>Job runner <span class="badge target">Target</span></td><td>An advisory lock per job, a run-history table (last success, cursor, counts), paging with bounded concurrency, time limits, direct service calls.</td><td>Jobs without locks, overlapping windows, unbounded fan-out, HTTP self-calls.</td><td>4</td></tr>
+        </tbody>
+      </table></div>
+
+      <details>
+        <summary>Today, by the numbers</summary>
+        <div class="table-wrap"><table class="status-table">
+          <tbody>
+            <tr><td>Files importing Prisma directly</td><td>121</td></tr>
+            <tr><td>Literal <code>status: 'ACTIVE'</code> filters</td><td>132 occurrences in 58 files</td></tr>
+            <tr><td>Versions of the “No fake MRP” rule</td><td>3 rule sets + 1 copy; the scraper path has none</td></tr>
+            <tr><td>Meanings of “Loot”</td><td>4 thresholds</td></tr>
+            <tr><td>Feed query builders</td><td>2, which rank “Top” differently</td></tr>
+            <tr><td>Hand-written deal-shaped types</td><td>about 17 (13 web, 4 mobile)</td></tr>
+            <tr><td>Database transactions</td><td>4 in the whole codebase</td></tr>
+            <tr><td>Cache API uses</td><td>0</td></tr>
+            <tr><td>Copies of the Expo push sender</td><td>4</td></tr>
+          </tbody>
+        </table></div>
+      </details>
+    </section>
+
+    <!-- ───────────────────────── 4. Deployment ───────────────────────── -->
+    <section id="deployment">
+      <h2><span class="num">4</span>Deployment topology</h2>
+      <p class="intro">Everything deploys from one GitHub repository. The web app runs on Vercel, data on Neon and Upstash, the scraper on GitHub Actions runners, and the native app builds on Expo EAS.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart TB
+  subgraph GH["GitHub"]
+    REPO["Repository · main"]
+    CI["Actions · CI<br/>6 checks"]
+    SW["Actions · Scraper<br/>manual only"]
+  end
+  subgraph VC["Vercel"]
+    EDGE["Edge middleware"]
+    FN["Functions<br/>US East today · India target"]
+    VCRON["Cron scheduler"]
+  end
+  NEON[("Neon Postgres<br/>region to confirm")]
+  UP[("Upstash Redis")]
+  subgraph EXPO["Expo"]
+    EAS["EAS Build"]
+    STORES["App Store · Play Store<br/>not yet"]
+  end
+  CWS["Chrome Web Store<br/>not yet"]
+  REPO --> CI
+  REPO -->|"push to main"| FN
+  REPO --> SW
+  EDGE --> FN
+  EDGE --> UP
+  VCRON --> FN
+  FN --> NEON
+  SW --> NEON
+  REPO --> EAS
+  EAS -.-> STORES
+  REPO -.->|"extension zip"| CWS
+  DEV["Developer"] -.->|"manual migrations"| NEON
+</pre>
+        <figcaption>CI and the Vercel deploy both start from a push to main; nothing makes the deploy wait for CI</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Piece</th><th>Today</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>Vercel functions</td><td><span class="badge now">Now</span> US East (no region configured)</td><td><span class="badge target">Target</span> India: Mumbai or Singapore (owner decision), next to the database</td></tr>
+          <tr><td>Neon Postgres</td><td><span class="badge now">Now</span> one database; region not confirmed; no read replica</td><td><span class="badge target">Target</span> same region as functions; connection limits; a read replica for feeds later</td></tr>
+          <tr><td>Upstash Redis</td><td><span class="badge now">Now</span> rate-limit counters</td><td><span class="badge target">Target</span> also counters and cache; Upstash QStash for fan-out</td></tr>
+          <tr><td>GitHub Actions</td><td><span class="badge now">Now</span> CI on every push and PR; scraper on manual dispatch (US runners)</td><td><span class="badge target">Target</span> branch protection requiring CI; gated migrations; later, per-source ingest functions in India</td></tr>
+          <tr><td>Environments</td><td><span class="badge gap">Gap</span> production only; migrations by hand</td><td><span class="badge target">Target</span> staging database (a Neon branch per preview, or one shared; owner decision)</td></tr>
+          <tr><td>Expo / EAS</td><td><span class="badge planned">Built</span> push project not configured; not in the stores</td><td><span class="badge target">Target</span> TestFlight and Play internal track first, then public; over-the-air updates</td></tr>
+          <tr><td>Chrome extension</td><td><span class="badge planned">Built</span> v1.1.0, not published</td><td><span class="badge target">Target</span> Chrome Web Store, using only <code>/api/v1</code></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 5. Data ───────────────────────── -->
+    <section id="data">
+      <h2><span class="num">5</span>Data architecture</h2>
+      <p class="intro">One Postgres database holds everything. Below are the core models from the Prisma schema; catalogue extras, referrals and the frozen Tier 2 models are left out.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+erDiagram
+  User {
+    string email
+    enum role "USER, ADMIN, SUPERADMIN"
+    int reputation
+    datetime bannedAt
+  }
+  Deal {
+    string slug
+    float price
+    float originalPrice
+    enum status "PENDING, ACTIVE, EXPIRED, REJECTED, FRONTPAGE"
+    enum moderationStatus
+    float hotScore
+    int workingCount
+    int expiredCount
+    datetime expiresAt
+  }
+  ScrapedDeal {
+    string source
+    string externalId
+    string rawCategory
+    enum status "PENDING_REVIEW, APPROVED, REJECTED, DUPLICATE"
+  }
+  DealAlert {
+    string keyword
+    float minDiscount
+    enum frequency "INSTANT, DAILY, WEEKLY"
+  }
+  PriceHistory {
+    float price
+    datetime recordedAt
+  }
+  User ||--o{ Deal : posts
+  Category ||--o{ Deal : groups
+  Store |o--o{ Deal : sells
+  User ||--o{ Vote : casts
+  Deal ||--o{ Vote : receives
+  Deal ||--o{ DealStatusVote : "working or expired"
+  Deal ||--o{ Comment : has
+  Deal ||--o{ PriceHistory : tracks
+  User ||--o{ SavedDeal : saves
+  Deal ||--o{ SavedDeal : "saved as"
+  User ||--o{ DealAlert : sets
+  Category |o--o{ DealAlert : filters
+  Store |o--o{ DealAlert : filters
+  User ||--o{ PushToken : registers
+  User ||--o{ Report : files
+  Deal |o--o{ Report : "reported in"
+  Deal |o--o{ ScrapedDeal : "approved into"
+</pre>
+        <figcaption>Core entities (simplified). Also in the schema: <code>CommentLike</code>, <code>WebPushSubscription</code>, <code>InAppNotification</code>, and <code>ScraperRun</code>, a standalone run log</figcaption>
+      </figure>
+
+      <h3>Read and write paths</h3>
+      <div class="compare">
+        <figure class="diagram">
+          <h4>Read: an anonymous homepage visit</h4>
+<pre class="mermaid">
+flowchart TB
+  V["Visitor"] --> E["Vercel edge<br/>no CDN cache"]
+  E --> PG["Homepage render<br/>header reads the session"]
+  PG --> Q["Feed queries<br/>plus 13 queries never rendered"]
+  Q --> DB[("Neon Postgres<br/>pooled connection")]
+  DB --> R["HTML, not cacheable<br/>1.7 s first byte, cold"]
+</pre>
+          <figcaption>Every anonymous visit reaches the database</figcaption>
+        </figure>
+        <figure class="diagram">
+          <h4>Write: an upvote</h4>
+<pre class="mermaid">
+flowchart TB
+  U["POST /api/votes"] --> RL["Middleware rate limit<br/>Upstash Redis"]
+  RL --> VO["Upsert Vote"]
+  VO --> RC["Recount up and down votes"]
+  RC --> HS["Update Deal.hotScore"]
+  RC --> RP["Update poster reputation"]
+  HS -.->|"unawaited"| TG["Telegram post at 10"]
+  RC -.->|"unawaited"| MS["Milestone in-app notification"]
+</pre>
+          <figcaption>Counts are recounted on each vote, not stored</figcaption>
+        </figure>
+      </div>
+
+      <h3>Caching: today vs target</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Layer</th><th>Today</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>CDN</td><td><span class="badge gap">None</span> The homepage returns non-cacheable responses.</td><td><span class="badge target">Target</span> Anonymous pages and feeds cached with a short shared max-age and stale-while-revalidate; purged when a deal is promoted or expires.</td></tr>
+          <tr><td>Page shell</td><td><span class="badge gap">Dynamic</span> The header reads the session on most pages, so pages that declare revalidation probably render dynamically anyway (inference).</td><td><span class="badge target">Target</span> A static header plus a small client island for the signed-in parts.</td></tr>
+          <tr><td>Data cache</td><td><span class="badge gap">None</span> No Next.js cache APIs are used.</td><td><span class="badge target">Target</span> Cached hot reads (for example community stats).</td></tr>
+          <tr><td>Counters</td><td><span class="badge gap">Recounted</span> Vote totals are recounted on every vote; stored status counts are recounted in many places.</td><td><span class="badge target">Target</span> Up and down counts stored on the deal in the vote transaction; views and clicks counted in Redis and flushed hourly.</td></tr>
+          <tr><td>Reads at scale</td><td>One primary database.</td><td><span class="badge target">Target</span> Composite indexes first, then a read replica for feed and search reads.</td></tr>
+        </tbody>
+      </table></div>
+      <p>The invariant the plans hold at every stage: <strong>anonymous traffic never reaches the database uncached</strong>.</p>
+    </section>
+
+    <!-- ───────────────────────── 6. User lifecycle ───────────────────────── -->
+    <section id="user-lifecycle">
+      <h2><span class="num">6</span>User lifecycle</h2>
+      <p class="intro">From an anonymous visitor arriving from a social post or a search result, to a member, a contributor and, for a few, an admin. Dashed states are planned.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction TB
+  state "Anonymous visitor" as Anon
+  state "Browsing" as Browse
+  state "Signing in" as SignIn
+  state "Onboarding" as Onboard
+  state "Active member" as Member
+  state "Contributor" as Contrib
+  state "Trusted contributor (planned)" as Trusted
+  state "Admin or superadmin" as Staff
+  state "Dormant" as Dormant
+  state "Banned" as Banned
+  [*] --> Anon: Instagram, Telegram, Google or a share link
+  Anon --> Browse: lands on a deal, store or category page
+  Browse --> SignIn: wants to vote, save, comment or set an alert
+  SignIn --> Onboard: designed path
+  SignIn --> Member: today, onboarding never shows
+  Onboard --> Member: picks stores and categories
+  Member --> Contrib: submits a first deal
+  Contrib --> Trusted: reaches a reputation tier
+  Member --> Staff: promoted by a superadmin
+  Member --> Dormant: stops visiting
+  Contrib --> Dormant: stops visiting
+  Dormant --> Member: re-engaged by an alert, digest or push
+  Member --> Banned: banned by an admin
+  Contrib --> Banned: banned by an admin
+  Banned --> [*]
+  classDef planned stroke-dasharray:5 5
+  class Trusted planned
+</pre>
+        <figcaption>Web sign-in uses Google or email and password; the app signs in through an in-app browser and keeps the session token</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Stage</th><th>What the user can do</th><th>Touchpoints &amp; notifications</th><th>Data created</th><th>Metric that matters</th><th>Current vs planned</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Anonymous visitor</td>
+            <td>Arrive on a deal, store, category or intent page.</td>
+            <td>Instagram (posted by hand), the Telegram channel, Google results, share links.</td>
+            <td>None until they act; searches are logged (<code>SearchLog</code>).</td>
+            <td>Visits with at least one click-out (activation).</td>
+            <td><span class="badge now">Now</span> <span class="badge planned">Planned</span> Instagram automation; app links that open the native app.</td>
+          </tr>
+          <tr>
+            <td>Browsing</td>
+            <td>Read feeds, search, open deals, share, and click out to the store.</td>
+            <td>Feeds, deal pages, search, RSS. No notifications.</td>
+            <td><code>Deal.viewCount</code>, <code>Deal.clickCount</code>, <code>SearchLog</code>.</td>
+            <td>Click-outs per visit.</td>
+            <td><span class="badge now">Now</span></td>
+          </tr>
+          <tr>
+            <td>Signing in</td>
+            <td>Sign up or sign in with Google or email and password on the web; in the app, sign in through an in-app browser that hands back a session token.</td>
+            <td>Login and register pages; the app's sign-in sheet.</td>
+            <td><code>User</code>, <code>Account</code> (Google), a hashed password for email accounts.</td>
+            <td>Sign-up conversion.</td>
+            <td><span class="badge now">Now</span> <span class="badge gap">Gap</span> no password reset, no email verification. <span class="badge planned">Planned</span> v0 offers Google sign-up only; phone OTP or email with reset is an open decision.</td>
+          </tr>
+          <tr>
+            <td>Onboarding</td>
+            <td>Pick up to 5 favourite stores and some categories.</td>
+            <td>Onboarding modal.</td>
+            <td><code>DealAlert</code> rows from the picks (duplicates possible).</td>
+            <td>New members with at least one alert (suggested).</td>
+            <td><span class="badge gap">Gap</span> never appears for signed-in users today. <span class="badge planned">Planned</span> a working onboarding saved on the server (v1).</td>
+          </tr>
+          <tr>
+            <td>Active member</td>
+            <td>Vote, mark working or expired, comment and like, save deals, report, set up to 10 alerts.</td>
+            <td>Alert emails, daily and weekly digests, in-app inbox, “expiring soon” and “just went LOOT” pushes for saved deals.</td>
+            <td><code>Vote</code>, <code>DealStatusVote</code>, <code>Comment</code>, <code>CommentLike</code>, <code>SavedDeal</code>, <code>DealAlert</code>, <code>Report</code>, <code>PushToken</code>, <code>WebPushSubscription</code>, <code>InAppNotification</code>.</td>
+            <td>Day-7 return rate; active alert subscribers.</td>
+            <td><span class="badge now">Now</span> <span class="badge gap">Gap</span> app push not configured yet; Web Push broken.</td>
+          </tr>
+          <tr>
+            <td>Contributor</td>
+            <td>Submit deals (up to 3 an hour) and build reputation.</td>
+            <td>Instant moderation result; in-app notifications for comments and upvote milestones (5 to 500); the leaderboard.</td>
+            <td><code>Deal</code>, <code>PriceHistory</code>, <code>User.reputation</code>.</td>
+            <td>Share of posts and votes from non-admin users (north star).</td>
+            <td><span class="badge now">Now</span> <span class="badge gap">Gap</span> the duplicate-check bug rejects ordinary submissions.</td>
+          </tr>
+          <tr>
+            <td>Trusted contributor</td>
+            <td>Skip the review queue; reputation tier shown on deal cards.</td>
+            <td>Tier label on cards; weekly top-contributor highlights.</td>
+            <td>Reputation tier on <code>User</code> (design pending).</td>
+            <td>Non-admin share of posts and votes above 30% (the v0.3 gate).</td>
+            <td><span class="badge planned">Planned</span> v0.3</td>
+          </tr>
+          <tr>
+            <td>Admin or superadmin</td>
+            <td>Moderation queue, scraper queue, reports, stores, categories, collections, deal of the day, analytics. Superadmins also manage users and roles.</td>
+            <td>Admin console with pending counts.</td>
+            <td>Moderation fields on <code>Deal</code>, reviews on <code>ScrapedDeal</code>, <code>Report</code> status, role changes.</td>
+            <td>Approved niche deals per day (20 or more); median review time under 2 h (v1).</td>
+            <td><span class="badge now">Now</span> <span class="badge planned">Planned</span> editor notifications and a scored queue.</td>
+          </tr>
+          <tr>
+            <td>Banned</td>
+            <td>Restricted: core write actions (submitting, voting, commenting) are refused with a “suspended” message; making enforcement consistent across every action is part of security hardening (tracked privately).</td>
+            <td>None.</td>
+            <td><code>User.bannedAt</code>, <code>User.banReason</code>.</td>
+            <td>Approved deals reported or community-expired within 24 h (under 5%).</td>
+            <td><span class="badge now">Now</span> <span class="badge gap">Gap</span> partial enforcement</td>
+          </tr>
+          <tr>
+            <td>Dormant → re-engaged</td>
+            <td>Come back through an alert, digest or push.</td>
+            <td>Alert emails, digests, saved-deal pushes, the daily web push.</td>
+            <td>None: there is no last-active field.</td>
+            <td>Day-7 return rate.</td>
+            <td><span class="badge gap">Gap</span> no dormancy tracking or win-back flow; the push channels don't work yet.</td>
+          </tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 7. Deal lifecycle ───────────────────────── -->
+    <section id="deal-lifecycle">
+      <h2><span class="num">7</span>Product (deal) lifecycle</h2>
+      <p class="intro">Here “product” means the product or deal listing on SnatchPicks: from an item at a store, through detection, moderation and life in the feed, to expiry and the page it leaves behind.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  SP["🏬 Store product"] --> DT["🔎 Detected<br/>community post · scraper adapters<br/>later: Amazon tracking tiers"]
+  DT --> CA["📥 Candidate<br/>ScrapedDeal PENDING_REVIEW<br/>or Deal PENDING"]
+  CA --> MO{{"🛡️ Moderation<br/>automatic or admin"}}
+  MO -->|approved| LV["✅ Live<br/>ACTIVE · later Popular, Frontpage"]
+  MO -->|rejected| RJ["⛔ Rejected"]
+  LV --> EN["🗳️ Engagement<br/>votes · hot score · badges<br/>status votes · price history"]
+  EN --> DI["📣 Distribution<br/>alerts · Telegram · digests"]
+  DI --> EX["⌛ Expiry<br/>expiresAt · community · admin"]
+  EX --> AF["🪦 Afterlife<br/>expired page with similar deals"]
+</pre>
+        <figcaption>The nine stages of a deal</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Stage</th><th>Today</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>Detected</td><td><span class="badge now">Now</span> Community posts; five scraper adapters (paused, no key).</td><td><span class="badge target">Target</span> Per-source schedules; Amazon tracked-product tiers (hot every 10 min, warm hourly, cold every 6 h) verified through Amazon's official API once eligible.</td></tr>
+          <tr><td>Candidate</td><td><span class="badge now">Now</span> <code>ScrapedDeal</code> in <code>PENDING_REVIEW</code>, or <code>Deal</code> in <code>PENDING</code>.</td><td><span class="badge target">Target</span> One candidate path for every source: canonical URL, product key, store and category mapping, price history.</td></tr>
+          <tr><td>Moderation</td><td><span class="badge now">Now</span> Four automatic checks on user submissions; a human for every scraped item.</td><td><span class="badge target">Target</span> Shared quality gates, a score, auto-reject with reasons, a score-sorted queue, and auto-publish for high-confidence deals (on hold; shadow mode first).</td></tr>
+          <tr><td>Live</td><td><span class="badge now">Now</span> <code>ACTIVE</code>. <code>FRONTPAGE</code> exists in the schema but nothing sets it.</td><td><span class="badge target">Target</span> New → Popular (automatic) → Frontpage (editor pick), labelled on cards.</td></tr>
+          <tr><td>Engagement</td><td><span class="badge now">Now</span> Votes, hot score, badges, status votes, price history.</td><td><span class="badge target">Target</span> Stored counters; a seeded starting score for scraped deals; a revised hot score.</td></tr>
+          <tr><td>Distribution</td><td><span class="badge now">Now</span> Alert job every 30 min, Telegram at hot score 10 or on scraped approval, digests.</td><td><span class="badge target">Target</span> Outbox events trigger alerts within minutes, exactly once; alerts that fire at a chosen tier.</td></tr>
+          <tr><td>Expiry</td><td><span class="badge now">Now</span> <code>expiresAt</code> passes; community consensus (10+ expired votes, at least 2× working); admin. Scraped deals have no expiry.</td><td><span class="badge target">Target</span> Also the source's end time, a default TTL (72 h), not seen for several runs, price reverted, sold out.</td></tr>
+          <tr><td>Afterlife</td><td><span class="badge now">Now</span> The deal page shows “This deal has expired” with similar deals. <span class="badge gap">Gap</span> Pending and rejected deals get the same page.</td><td><span class="badge target">Target</span> Expired pages kept for SEO; pending and rejected deals hidden.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>States today <span class="badge now">Now</span></h3>
+      <figure class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction TB
+  state "ScrapedDeal PENDING_REVIEW" as SPR
+  state "ScrapedDeal APPROVED" as SAP
+  state "ScrapedDeal REJECTED" as SRJ
+  state "Deal PENDING, moderation PENDING" as DP
+  state "Deal PENDING, NEEDS_REVIEW" as DQ
+  state "Deal ACTIVE" as DA
+  state "Deal REJECTED" as DR
+  state "Deal EXPIRED" as DE
+  state "Deal FRONTPAGE" as DF
+  [*] --> SPR: scraper adapter
+  [*] --> DP: user submits
+  [*] --> DA: admin creates a deal
+  SPR --> SAP: admin approves and picks a category
+  SPR --> SRJ: admin rejects
+  SAP --> DA: new Deal, ADMIN_APPROVED, verified
+  DP --> DR: AUTO_REJECTED
+  DP --> DA: AUTO_APPROVED
+  DP --> DQ: price check or unsure AI
+  DQ --> DA: ADMIN_APPROVED
+  DQ --> DR: ADMIN_REJECTED
+  DA --> DE: expiresAt passed, community consensus or admin
+  DE --> [*]
+  DR --> [*]
+  SRJ --> [*]
+  note right of DF
+    Defined in DealStatus,
+    never set by any code path
+  end note
+  note left of SRJ
+    DUPLICATE also exists
+    in ScrapedDealStatus, never set
+  end note
+</pre>
+        <figcaption>Real <code>DealStatus</code>, <code>ModerationStatus</code> and <code>ScrapedDealStatus</code> values from the schema. AUTO_REJECTED: unsafe URL, duplicate, or AI spam / malicious; AUTO_APPROVED: AI says legit with confidence ≥ 0.82</figcaption>
+      </figure>
+
+      <h3>Target states <span class="badge target">Target</span></h3>
+      <figure class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  direction TB
+  state "Candidate detected" as Cand
+  state "Normalised and enriched" as Norm
+  state "Scored" as Scored
+  state "Review queue, sorted by score" as Queue
+  state "Auto-rejected with a reason" as AutoRej
+  state "Live New" as New
+  state "Live Popular" as Popular
+  state "Live Frontpage" as Front
+  state "Expired" as Exp
+  state "Afterlife page" as After
+  [*] --> Cand: community post, feed poll or tracked product
+  Cand --> Norm: canonical URL, product key, store and category
+  Norm --> AutoRej: fails a quality gate
+  Norm --> Scored: passes price, MRP, niche, duplicate and discount gates
+  Scored --> AutoRej: below the floor
+  Scored --> Queue: review band
+  Scored --> New: above the publish threshold and trusted, once auto-publish is enabled
+  Queue --> New: editor approves in one click
+  Queue --> AutoRej: stopped appearing at the source
+  New --> Popular: score threshold, automatic
+  Popular --> Front: editor pick
+  New --> Exp: source end time, TTL, not seen, price reverted or sold out
+  Popular --> Exp: same triggers, community or admin
+  Front --> Exp: same triggers, community or admin
+  Exp --> After
+  After --> [*]
+</pre>
+        <figcaption>From the ingestion pipeline design and the v1 plan. Auto-publish is on hold by the owner; until then high scorers go to the top of the queue</figcaption>
+      </figure>
+
+      <h3>Worked example: an Amazon deal goes live at 9:00 AM</h3>
+      <p>A Lakmé serum drops from ₹899 to ₹449 as a Lightning Deal on amazon.in at 09:00, ending at 15:00. When would it reach SnatchPicks at each stage of the pipeline? Times beyond “Today” are design targets and estimates, not measurements.</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Pipeline state</th><th>In review queue</th><th>Live on site</th><th>User alerted</th><th>When the deal ends (15:00)</th></tr></thead>
+        <tbody>
+          <tr><td>Today <span class="badge now">Now</span></td><td>Never: schedule paused, no feed key, and the Amazon adapter likely returns nothing</td><td>Only if a community member posts it (≈ 09:05–10:00, once the duplicate bug is fixed)</td><td>Next alert run, up to +30 min</td><td>Stays live forever (no expiry)</td></tr>
+          <tr><td>Today's design with keys</td><td>09:30–10:30</td><td>≈ 11:00–17:00 (editor's day)</td><td>Live + up to 30 min</td><td>Stays live (no expiry)</td></tr>
+          <tr><td>Phase A (v0) <span class="badge target">Target</span></td><td>≈ 09:15–09:30</td><td>≈ 10:00–13:00 (unsorted queue)</td><td>Live + up to 30 min</td><td>Stays live unless an editor expires it</td></tr>
+          <tr><td>Phase B (v0.1) <span class="badge target">Target</span></td><td>≈ 09:10–09:20</td><td>≈ 09:30–10:00 (top of a short queue, one click)</td><td>Live + up to 30 min</td><td>Expires at the 72 h TTL, or sooner if re-checked</td></tr>
+          <tr><td>Phase C (v0.2–0.3) <span class="badge target">Target</span></td><td>n/a for high-score deals</td><td>≈ 09:02–09:11</td><td>≈ 09:03–09:12 (outbox, about 1 min)</td><td>Expires at 15:00 exactly, or earlier when sold out or the price reverts</td></tr>
+        </tbody>
+      </table></div>
+      <p>While auto-publish is on hold, Phase C deals that would qualify go to the top of the queue with an editor push notification; the realistic target is then live at ≈ 09:15–09:40 during staffed hours.</p>
+
+      <details>
+        <summary>Phase C timeline in detail</summary>
+        <div class="table-wrap"><table class="status-table">
+          <thead><tr><th>Time</th><th>Step</th></tr></thead>
+          <tbody>
+            <tr><td>09:00:00</td><td>Deal starts on Amazon.</td></tr>
+            <tr><td>09:00–09:10</td><td><strong>Detected</strong> by the first of several paths: the tracked-product poll (hot tier every 10 min), an Amazon category search filtered by minimum saving (every 10 min), the Keepa deals poll (every 10–15 min), or a community post (any time).</td></tr>
+            <tr><td>+ ≤ 5 s</td><td>Candidate processed: normalised (the ASIN is the product key), de-duplicated across all paths, enriched (store Amazon, category mapped from the browse node).</td></tr>
+            <tr><td>+ ≈ 1 s</td><td><strong>Verified</strong> with one official-API item lookup: current price, Amazon's own list price, saving percentage, deal start and end time, % claimed, availability and the affiliate link.</td></tr>
+            <tr><td>+ &lt; 1 s</td><td>Gates (fake-MRP rule against the real list price, niche, minimum discount, in stock), then score.</td></tr>
+            <tr><td>+ &lt; 1 s</td><td>Published through the lifecycle: expiry set to the deal's end time, “Lightning deal” and “% claimed” badges, a price-history row, an outbox event.</td></tr>
+            <tr><td>+ ≤ 1 min</td><td>Outbox drained: alert matching, then Expo push and Telegram.</td></tr>
+            <tr><td>every 10 min</td><td>Re-verified by the hot-tier poll: “% claimed” updated; expired on sell-out, price reversion or end time.</td></tr>
+            <tr><td>15:00</td><td>Auto-expired.</td></tr>
+          </tbody>
+        </table></div>
+      </details>
+    </section>
+
+    <!-- ───────────────────────── 8. Feature lifecycle ───────────────────────── -->
+    <section id="feature-lifecycle">
+      <h2><span class="num">8</span>Feature lifecycle</h2>
+      <p class="intro">How a feature goes from an idea to being promoted, frozen or cut. The rules come from the feature tier list and the working agreement in the plans; metric gates decide what happens after launch.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart TD
+  I["💡 Idea"] --> GI["GitHub issue"]
+  GI --> T{{"Which tier?"}}
+  T -->|"Tier 1 · core loop"| M1["Maintain<br/>bugs are P0"]
+  T -->|"Tier 2 · frozen"| F2["Behind a flag<br/>no new work until 1,000 DAU"]
+  T -->|"Tier 3 · hidden"| H3["Hidden behind a flag<br/>pending a cut decision"]
+  M1 --> NM{{"Adds a model?"}}
+  F2 --> NM
+  NM -->|yes| DD["Design doc<br/>why it is Tier 1"]
+  NM -->|no| B["Build behind FEATURE_FLAGS"]
+  DD --> B
+  B --> PR["Pull request<br/>template asks: new model or route?"]
+  PR --> CI{{"CI green?<br/>type-check · schema · drift<br/>admin guards · tests · lint"}}
+  CI -->|no| B
+  CI -->|yes| SM["Squash-merge<br/>no AI attribution"]
+  SM --> DEP["Vercel deploy"]
+  DEP --> RO["Flag rollout"]
+  RO --> ME{{"Metric gate met?"}}
+  ME -->|yes| PRO["Promote"]
+  ME -->|"not yet"| FRZ["Freeze"]
+  ME -->|"no demand"| CUT["Cut<br/>a migration drops the tables"]
+  H3 -->|"cut decision"| CUT
+</pre>
+        <figcaption>One issue and one PR per change; CI must be green before merge</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Step</th><th>What happens</th><th>Rule or gate</th></tr></thead>
+        <tbody>
+          <tr><td>Idea → issue</td><td>Every feature or non-trivial bug gets a GitHub issue; issues are the source of truth for in-flight work.</td><td>Working agreement</td></tr>
+          <tr><td>Tier classification</td><td>Tier 1: the core loop, maintained. Tier 2: built, frozen behind a flag until 1,000 DAU. Tier 3: hidden behind a flag, then cut.</td><td>Feature tier list</td></tr>
+          <tr><td>Design doc</td><td>Required when the feature adds a model; no new API route without a matching Tier 1 or Tier 2 surface.</td><td>Tier-list rules</td></tr>
+          <tr><td>Build</td><td>Behind a <code>FEATURE_FLAGS</code> entry; Tier 3 UI must check its flag before rendering.</td><td>Tier-list rules</td></tr>
+          <tr><td>Pull request</td><td>One change per PR; the template asks whether it adds a model or route; changelog and docs updated in the same PR.</td><td>Working agreement</td></tr>
+          <tr><td>CI gates</td><td>Type-check (all workspaces), Prisma schema validation, migration drift check, admin-route guard check, tests, lint.</td><td>Must be green; never merge red or pending</td></tr>
+          <tr><td>Merge</td><td>Squash-merge with a plain imperative subject; no AI or model attribution and no co-author trailers.</td><td>Working agreement</td></tr>
+          <tr><td>Deploy</td><td>Vercel builds and deploys <code>main</code>; schema migrations are applied separately by hand.</td><td><span class="badge gap">Gap</span> No deploy gate on CI</td></tr>
+          <tr><td>Rollout and measure</td><td>The flag is turned on for a deployment; the release names the metric it should move and is reviewed a week after shipping.</td><td>Metric gates (supply, activation, retention, community share, trust)</td></tr>
+          <tr><td>Promote / freeze / cut</td><td>Promote to Tier 1, keep frozen, or delete the code and drop the tables with a migration.</td><td>Owner decision against the gate</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Real examples</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Feature</th><th>Outcome</th></tr></thead>
+        <tbody>
+          <tr><td>Forums, Picks currency, badges, quiz (and daily check-in streaks)</td><td><span class="badge gap">Cut</span> Tables and user columns dropped by migration <code>1_remove_tier3</code>. Forums are replaced by a Telegram or Discord community.</td></tr>
+          <tr><td>Deal requests, collections, product watch, bank offers</td><td><span class="badge now">Tier 2</span> Frozen behind flags that hide their pages.</td></tr>
+          <tr><td>Price history, referrals</td><td><span class="badge now">Tier 2</span> Flagged, but the flags gate nothing, so they stay live.</td></tr>
+          <tr><td>Purchase confirmation, sale calendar</td><td><span class="badge now">Tier 3</span> Flagged, but the flags gate nothing. Decisions pending: roll into referral tracking, and replace with a hard-coded calendar.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Gaps today vs target</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Area</th><th>Today</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>Flag evaluation</td><td><span class="badge gap">Gap</span> Read once at start-up, so fixed per deploy.</td><td><span class="badge target">Target</span> A runtime <code>isEnabled()</code> check.</td></tr>
+          <tr><td>Flag coverage</td><td><span class="badge gap">Gap</span> 4 flags gate one page each; 4 gate nothing; APIs, crons and components stay live.</td><td><span class="badge target">Target</span> Flags checked across pages, API routes (<code>route({ flag })</code>), crons and components.</td></tr>
+          <tr><td>Staging</td><td><span class="badge gap">Gap</span> None.</td><td><span class="badge target">Target</span> A staging database for previews.</td></tr>
+          <tr><td>Migrations</td><td><span class="badge gap">Gap</span> Applied by hand in production.</td><td><span class="badge target">Target</span> Applied in a gated deploy step, after CI.</td></tr>
+          <tr><td>Merge protection</td><td><span class="badge gap">Gap</span> Followed by convention; <code>main</code> has no branch protection.</td><td><span class="badge target">Target</span> Branch protection requiring the CI check.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ───────────────────────── 9. Jobs ───────────────────────── -->
+    <section id="jobs">
+      <h2><span class="num">9</span>Background jobs topology</h2>
+      <p class="intro">Eight Vercel cron jobs call HTTP endpoints in the web app; the scraper runs as a separate GitHub Actions workflow. Schedules are UTC.</p>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph VC["Vercel cron · UTC"]
+    E15["expire-deals<br/>every 15 min"]
+    SA["send-alerts<br/>every 30 min"]
+    EA["expiry-alerts<br/>every 30 min"]
+    PW["price-watch-check<br/>hourly"]
+    RH["recalc-hotscores<br/>hourly"]
+    DDG["daily-digest<br/>08:00 daily"]
+    WD["weekly-digest<br/>Mon 09:00"]
+    SE["sale-event-alerts<br/>08:00 daily"]
+  end
+  subgraph GHA["GitHub Actions"]
+    SC["scraper.yml<br/>paused · manual only"]
+  end
+  DB[("Postgres")]
+  EXPO["Expo Push"]
+  WPE["Web Push endpoint<br/>in the web app"]
+  RS["Resend email"]
+  INB["In-app inbox"]
+  E15 --> DB
+  SA --> DB
+  EA --> DB
+  PW --> DB
+  RH --> DB
+  DDG --> DB
+  WD --> DB
+  SE --> DB
+  SC --> DB
+  SA --> EXPO
+  SA --> RS
+  EA --> EXPO
+  EA --> INB
+  PW --> EXPO
+  PW --> RS
+  PW --> INB
+  RH --> EXPO
+  DDG --> RS
+  DDG -->|"HTTP self-call"| WPE
+  WD --> RS
+  SE --> RS
+  SE -->|"HTTP self-call"| WPE
+</pre>
+        <figcaption>Who each job reads from and sends to</figcaption>
+      </figure>
+
+      <h3>When jobs collide</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Moment (UTC)</th><th>Jobs starting at once</th></tr></thead>
+        <tbody>
+          <tr><td>Every hour at :00</td><td>5: expire-deals, send-alerts, expiry-alerts, price-watch-check, recalc-hotscores</td></tr>
+          <tr><td>Daily at 08:00</td><td>7: the five above plus daily-digest and sale-event-alerts</td></tr>
+          <tr><td>Mondays at 09:00</td><td>6: the five above plus weekly-digest</td></tr>
+          <tr><td>Every hour at :30</td><td>3: expire-deals, send-alerts, expiry-alerts</td></tr>
+          <tr><td>:15 and :45</td><td>1: expire-deals</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="compare">
+        <div class="card">
+          <h4>Current issues <span class="badge gap">Gap</span></h4>
+          <ul>
+            <li>No locks and no last-run state, so a slow run can overlap the next one.</li>
+            <li><code>send-alerts</code> looks back 31 minutes on a 30-minute schedule, and its daily and weekly pass runs twice in the 02:00 hour, so alerts can be sent twice.</li>
+            <li><code>price-watch-check</code> sends everything at once, with no bound on concurrency.</li>
+            <li>No time limits set on cron routes.</li>
+            <li>Digests send web push by calling the app's own endpoint over public HTTP.</li>
+            <li>Four copies of the Expo push sender.</li>
+            <li>Jobs keep running for features whose flags are off.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Target <span class="badge target">Target</span></h4>
+          <ul>
+            <li><strong>Job runner:</strong> a Postgres advisory lock per job, a run-history table (last success, cursor, counts), paging with bounded concurrency, a time limit per route, and direct service calls instead of HTTP self-calls.</li>
+            <li><strong>Outbox:</strong> services write domain events (<code>deal_approved</code>, <code>deal_promoted</code>, <code>price_dropped</code>, <code>deal_expiring</code>) in the same transaction; a drain job, later a queue, runs the handlers.</li>
+            <li><strong>Exactly-once alerts:</strong> one delivery row per alert and deal, unique on the pair.</li>
+            <li><strong>One sender per channel</strong> (Expo, Web Push, Telegram, email, in-app).</li>
+            <li><strong>Scraper:</strong> per-source runs with a lock and a cursor, moved next to the database in India.</li>
+          </ul>
+        </div>
+      </div>
+
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  SVC["Domain service<br/>approve · promote · expire"] -->|"same transaction"| OB[("Outbox<br/>unique dedupe key")]
+  RUN["Job runner<br/>lock · run history · cursor"] --> DR["Drain<br/>every minute, later a queue"]
+  OB --> DR
+  DR --> H["Notification handlers"]
+  H --> DLV[("Delivery rows<br/>unique per alert and deal")]
+  H --> CH["Channels<br/>Expo · Web Push · Telegram · email · in-app"]
+</pre>
+        <figcaption><span class="badge target">Target</span> Event-driven fan-out replacing the polling alert job for new deals</figcaption>
+      </figure>
+    </section>
+
+    <footer>
+      Reflects the SnatchPicks codebase as of commit <code>736a0b91</code>, November 2026. Diagrams rendered with Mermaid.
+    </footer>
+  </main>
+</div>
+</body>
+</html>
