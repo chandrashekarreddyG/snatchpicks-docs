@@ -20,6 +20,7 @@
     <li><a href="current.html">Current implementation</a></li>
     <li><a href="architecture.html">Architecture</a></li>
     <li><a href="recommendations.html" class="active" aria-current="page">Recommendations</a></li>
+    <li><a href="hosting.html">Hosting &amp; cost</a></li>
   </ul>
   <ol>
     <li><a href="#summary">Summary</a></li>
@@ -363,7 +364,7 @@ flowchart LR
       <div class="table-wrap"><table>
         <thead><tr><th>ID</th><th>Change</th><th>Today</th><th>After</th><th>Phase</th></tr></thead>
         <tbody>
-          <tr><td>C15</td><td><strong>Run in India</strong>: set the function region to Mumbai (or Singapore), move the database to the same region, fix the README claim</td><td>Functions run in US East; no region is configured</td><td>About 200 ms+ less per request (estimate)</td><td>0 (needs region decision)</td></tr>
+          <tr><td>C15</td><td><strong>Run in India</strong>: set the function region to Mumbai and move Postgres to a Mumbai provider (Neon has no India region, so Supabase Mumbai or AWS RDS Mumbai), with Redis on Upstash Mumbai; fix the README claim</td><td>Functions run in US East; no region is configured; Neon has no India region</td><td>About 200 ms+ less per request (estimate)</td><td>0 (needs region decision)</td></tr>
           <tr><td>C16</td><td><strong>Cacheable pages</strong>: a static header plus a client island that reads a summary endpoint; cached hot reads; CDN cache headers on anonymous API reads</td><td>The header calls auth on 52 of 67 pages; no cache APIs used; the homepage returns <code>no-store</code></td><td>Anonymous traffic served from cache (target p95 under 300 ms)</td><td>2</td></tr>
           <tr><td>C17</td><td><strong>Staging and safe deploys</strong>: branch protection on <code>main</code> requiring the type-check; a database branch or staging database for previews; migrations run in a gated step</td><td>No staging; migrations are manual; nothing stops a red commit from deploying; no branch protection</td><td>Schema changes are rehearsed and gated</td><td>0 (protection) / 2 (staging)</td></tr>
           <tr><td>C18</td><td><strong>Connection limits</strong>: small connection limit and pool timeout on the pooled connection; capped concurrency in jobs</td><td>No limits in code</td><td>No database connection exhaustion during cron bursts</td><td>0</td></tr>
@@ -418,6 +419,7 @@ apps/extension   /api/v1 only; one config
           <tr><td><strong>100k+ DAU</strong></td><td>Search relevance and job isolation</td><td>Dedicated search engine; separate worker service for the scraper and notifications; more categories</td></tr>
         </tbody>
       </table></div>
+      <p>Where to run each stage, and what it costs per month, is on the <a href="hosting.html">Hosting &amp; cost</a> page.</p>
 
       <h3>Invariants at every stage</h3>
       <ul>
@@ -728,7 +730,7 @@ flowchart LR
           <tr><td>Baby &amp; parenting vertical</td><td>In v1, or in v1.x</td><td>Vertical scope</td></tr>
           <tr><td>Cashback</td><td>Partner integration after v1, or never</td><td>Cashback work</td></tr>
           <tr><td>Native app GA timing</td><td>GA in v1 (as planned), or earlier depending on v0.2 retention</td><td>App store release plan</td></tr>
-          <tr><td>Region</td><td>Mumbai (<code>bom1</code>) or Singapore (<code>sin1</code>); the database must be in the same region</td><td>C15 (region)</td></tr>
+          <tr><td>Region</td><td>Mumbai (<code>bom1</code>) or Singapore (<code>sin1</code>); the database must be in the same region. Recommended: <code>bom1</code> + Supabase Mumbai + Upstash Mumbai (see <a href="hosting.html">Hosting</a>)</td><td>C15 (region)</td></tr>
           <tr><td>Staging</td><td>A database branch per preview deployment, or one shared staging database</td><td>C17 (staging)</td></tr>
           <tr><td>Side effects for auto-approved deals</td><td>Same side effects as admin approval (+10 reputation, AI summary, Telegram), or none</td><td>C3 (lifecycle)</td></tr>
           <tr><td>Off-niche pages (finance, gaming, hosting, student, gift cards, home services, grocery, IPL, summer sale)</td><td>Delete them, or convert to database-driven category pages</td><td>Phase 5 cleanup</td></tr>
