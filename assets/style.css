@@ -1,3 +1,37 @@
+/*
+ * SnatchPicks docs — shared stylesheet for every page.
+ *
+ * Page template: <div class="layout"><nav class="toc">…</nav><main id="top">…</main></div>
+ *
+ * Reusable classes (existing):
+ *   .hero .eyebrow .lead          page header block, kicker line, large intro paragraph
+ *   .pills > .pill                row of rounded tags
+ *   .grid > .card (.icon)         responsive card grid; .icon is a big emoji at the top of a card
+ *   .callout, .callout.warn       highlighted note (accent / warning border)
+ *   .table-wrap > table           horizontally scrollable table
+ *   figure.diagram > pre.mermaid  Mermaid diagram frame (+ figcaption)
+ *   details > summary             collapsible block (Mermaid inside renders when opened)
+ *   .intro                        muted section intro paragraph
+ *   h2 .num                       accent-coloured section number
+ *   ol.steps                      numbered vertical timeline
+ *   ol.loop                       numbered card loop (core loop)
+ *   .journey / .tracer            containers for the flows.js widgets ([data-journey], [data-tracer])
+ *
+ * Added classes:
+ *   nav.toc .site-nav             page switcher above the in-page section list; the current
+ *                                 page's link carries .active + aria-current="page"
+ *   .badge                        small status pill; variants:
+ *     .badge.now                  current implementation (green)
+ *     .badge.target               target design (blue)
+ *     .badge.planned              planned / not built yet (purple)
+ *     .badge.gap                  known gap or bug (red)
+ *   table.status-table            table whose first column is a bold label (use inside .table-wrap)
+ *   a.card (+ .more)              whole-card link with hover lift; .more is the "Read →" line
+ *   .grid.lg                      grid with wider, roomier cards (page links on the overview)
+ *   .compare                      side-by-side columns (e.g. today vs target diagrams); stacks on narrow screens
+ *   pre.tree                      monospace directory tree
+ */
+
 :root {
   --bg: #fffaf5;
   --surface: #ffffff;
@@ -9,6 +43,10 @@
   --accent-ink: #c2410c;
   --ok: #15803d;
   --warn: #b45309;
+  --on-accent: #ffffff;
+  --c-target: #1d4ed8;
+  --c-planned: #6d28d9;
+  --c-gap: #b91c1c;
   --radius: 14px;
   --nav-w: 250px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -26,6 +64,10 @@
     --accent-ink: #fdba74;
     --ok: #4ade80;
     --warn: #fbbf24;
+    --on-accent: #1c1917;
+    --c-target: #93c5fd;
+    --c-planned: #c4b5fd;
+    --c-gap: #fca5a5;
   }
 }
 
@@ -57,19 +99,34 @@ nav.toc {
 nav.toc .brand { font-weight: 800; font-size: 1.25rem; text-decoration: none; color: var(--fg); display: block; margin-bottom: 1.2rem; }
 nav.toc .brand span { color: var(--accent); }
 nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
-nav.toc li { counter-increment: toc; }
-nav.toc li a {
+nav.toc ol > li { counter-increment: toc; }
+nav.toc ol a {
   display: block; padding: 0.35rem 0.6rem; border-radius: 8px;
   color: var(--muted); text-decoration: none; font-size: 0.93rem;
 }
-nav.toc li a::before { content: counter(toc) ". "; color: var(--accent); font-weight: 600; }
-nav.toc li a:hover, nav.toc li a.active { background: var(--surface-2); color: var(--fg); }
+nav.toc ol a::before { content: counter(toc) ". "; color: var(--accent); font-weight: 600; }
+nav.toc ol a:hover, nav.toc ol a.active { background: var(--surface-2); color: var(--fg); }
+
+/* Page switcher */
+nav.toc .site-nav {
+  list-style: none; margin: 0 0 1rem; padding: 0 0 1rem; border-bottom: 1px solid var(--border);
+  display: grid; gap: 0.35rem;
+}
+nav.toc .site-nav a {
+  display: block; padding: 0.45rem 0.75rem; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--fg); font-weight: 650; font-size: 0.92rem; text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+nav.toc .site-nav a:hover { border-color: var(--accent); }
+nav.toc .site-nav a.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 main { padding: 2.5rem clamp(1.25rem, 4vw, 3.5rem) 5rem; max-width: 1060px; }
 
 @media (max-width: 880px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
   nav.toc { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
   nav.toc ol { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  nav.toc .site-nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+  nav.toc .site-nav a { text-align: center; }
 }
 
 /* Hero */
@@ -312,3 +369,36 @@ details { background: var(--surface); border: 1px solid var(--border); border-ra
 details summary { cursor: pointer; font-weight: 600; }
 
 footer { margin-top: 4rem; padding-top: 1.2rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+
+/* ── Added shared components ── */
+.badge {
+  --b: var(--muted);
+  display: inline-block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 0.08rem 0.5rem; border-radius: 999px; vertical-align: 0.12em; white-space: nowrap; line-height: 1.5;
+  color: var(--b); border: 1px solid color-mix(in srgb, var(--b) 45%, transparent);
+  background: color-mix(in srgb, var(--b) 11%, transparent);
+}
+.badge.now { --b: var(--ok); }
+.badge.target { --b: var(--c-target); }
+.badge.planned { --b: var(--c-planned); }
+.badge.gap { --b: var(--c-gap); }
+h2 .badge, h3 .badge, h4 .badge { margin-left: 0.35rem; }
+
+table.status-table td:first-child { font-weight: 650; color: var(--fg); }
+table.status-table td .badge { margin: 0 0.25rem 0.15rem 0; }
+
+a.card { display: block; text-decoration: none; color: inherit; transition: border-color 0.15s, transform 0.15s; }
+a.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+a.card .more { display: block; margin-top: 0.7rem; color: var(--accent-ink); font-weight: 650; font-size: 0.9rem; }
+.grid.lg { grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); }
+.grid.lg .card { padding: 1.3rem 1.4rem; }
+.grid.lg .card h4 { font-size: 1.15rem; }
+
+.compare { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); margin: 1.2rem 0; }
+.compare > figure.diagram { margin: 0; }
+.compare h4 { margin: 0 0 0.6rem; }
+
+pre.tree {
+  font-family: var(--mono); font-size: 0.85rem; line-height: 1.5; overflow-x: auto; margin: 1rem 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.1rem;
+}
