@@ -1,0 +1,13 @@
+{
+  "name": "snatchpicks-page-check",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Headless Chromium checks for the docs pages (run by .github/workflows/page-check.yml)",
+  "type": "module",
+  "scripts": {
+    "check": "node check.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.65.1"
+  }
+}
