@@ -172,6 +172,7 @@ const PARTICLES = 84;
 const SWAY_AMP = 0.32; // radians either side
 const SWAY_W = (2 * Math.PI) / 44; // one sway every 44 s
 const SWAY_IDLE_MS = 8000;
+const WIDE_ARC = 2.6; // how far the middle of the landscape layout bows towards the viewer
 
 const els = {
   stage: document.getElementById("s3d-stage"),
@@ -319,7 +320,8 @@ function start(THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObject }) {
     button.className = `s3d-label ${node.layer === "today" ? "" : node.layer}`.trim();
     button.dataset.id = node.id;
     button.setAttribute("aria-controls", "s3d-panel");
-    if (node.layer !== "today") button.setAttribute("aria-label", `${node.label} (${BADGES[node.layer].text})`);
+    button.textContent = node.short ?? node.label; // the panel shows the full name
+    if (node.layer !== "today") button.setAttribute("aria-label", `${button.textContent} (${BADGES[node.layer].text})`);
     button.addEventListener("click", () => select(node.id));
     labelLayer.append(button); // pre-append so the DOM (and Tab) order follows NODES
     const label = new CSS2DObject(button);
@@ -386,8 +388,15 @@ function start(THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObject }) {
     scene.add(grid);
   }
 
+  // Landscape: the line bows towards the viewer in the middle, so it fills more of the stage's height.
+  const nodePos = (node) => {
+    const p = new Vector3().fromArray(node[mode]);
+    if (mode === "wide") p.z += WIDE_ARC * (1 - (p.x / 11.25) ** 2);
+    return p;
+  };
+
   function layout() {
-    for (const { node, group } of byId.values()) group.position.fromArray(node[mode]);
+    for (const { node, group } of byId.values()) group.position.copy(nodePos(node));
     const lift = mode === "wide" ? new Vector3(0, 1, 0) : new Vector3(0, 0, 1);
     drop.set(...(mode === "wide" ? [0, -1.3, 0] : [-1.3, 0, 0]));
     for (const e of edges) {
@@ -406,11 +415,11 @@ function start(THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObject }) {
     buildGrid();
   }
 
-  const viewDir = () => (mode === "wide" ? new Vector3(0.18, 0.6, 1) : new Vector3(0.3, 0.12, 1)).normalize();
+  const viewDir = () => (mode === "wide" ? new Vector3(0.15, 0.85, 1) : new Vector3(0.3, 0.12, 1)).normalize();
 
   // Distance at which every node (plus its label) fits the current aspect ratio.
   function fitCamera() {
-    const points = NODES.map((n) => new Vector3().fromArray(n[mode]));
+    const points = NODES.map(nodePos);
     const centre = new THREE.Box3().setFromPoints(points).getCenter(new Vector3());
     const z = viewDir();
     const x = new Vector3().crossVectors(new Vector3(0, 1, 0), z).normalize();
@@ -531,7 +540,6 @@ function start(THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObject }) {
   let swayTime = 0;
   let swayPrev = 0;
   let resumeTimer = 0;
-  let compactLabels = null;
   let raf = 0;
   let last = 0;
 
@@ -717,11 +725,6 @@ function start(THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObject }) {
     labelRenderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    const compact = w < 620;
-    if (compact !== compactLabels) {
-      compactLabels = compact;
-      for (const { node, button } of byId.values()) button.textContent = compact && node.short ? node.short : node.label;
-    }
     const nextMode = w / h < 0.95 ? "narrow" : "wide";
     if (nextMode !== mode) {
       mode = nextMode;
