@@ -1,0 +1,55 @@
+name: Page check
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/page-check/package-lock.json
+
+      - name: Install checker
+        working-directory: tools/page-check
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: tools/page-check
+        run: npx playwright install --with-deps chromium
+
+      - name: Serve site
+        run: |
+          nohup python3 -m http.server 8000 --bind 127.0.0.1 > "$RUNNER_TEMP/server.log" 2>&1 &
+          curl --retry 10 --retry-connrefused --retry-delay 1 -sf http://127.0.0.1:8000/index.html -o /dev/null
+
+      - name: Build page list
+        run: |
+          : > "$RUNNER_TEMP/pages.txt"
+          for f in *.html scraper/*.html; do
+            [ -f "$f" ] && echo "http://127.0.0.1:8000/$f" >> "$RUNNER_TEMP/pages.txt"
+          done
+          cat "$RUNNER_TEMP/pages.txt"
+          test -s "$RUNNER_TEMP/pages.txt"
+
+      - name: Run page checks
+        working-directory: tools/page-check
+        run: node check.mjs --list="$RUNNER_TEMP/pages.txt"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: page-check-out
+          path: tools/page-check/out
+          if-no-files-found: warn
