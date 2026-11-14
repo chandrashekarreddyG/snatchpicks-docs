@@ -30,6 +30,13 @@
  *   .grid.lg                      grid with wider, roomier cards (page links on the overview)
  *   .compare                      side-by-side columns (e.g. today vs target diagrams); stacks on narrow screens
  *   pre.tree                      monospace directory tree
+ *   .subnav                       pill switcher between the pages of one section (scraper/); the
+ *                                 current link carries aria-current="page"
+ *   .lg.sw                        legend swatch coloured by an inline --c custom property
+ *   .s3d                          3D scraper model (assets/scraper3d.js): .s3d-toolbar, .s3d-seg,
+ *                                 .s3d-stage (canvas + .s3d-labels > .s3d-label), .s3d-panel, and
+ *                                 .s3d-fallback (flat SVG, .fb-*). State classes on .s3d: .is-loading,
+ *                                 .is-live, .is-failed; with none of them (no JS) the fallback shows
  */
 
 :root {
@@ -401,4 +408,77 @@ a.card .more { display: block; margin-top: 0.7rem; color: var(--accent-ink); fon
 pre.tree {
   font-family: var(--mono); font-size: 0.85rem; line-height: 1.5; overflow-x: auto; margin: 1rem 0;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.1rem;
+}
+
+/* ── Scraper section ── */
+.subnav {
+  display: inline-flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.25rem; margin: 0 0 0.6rem;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+}
+.subnav a {
+  padding: 0.3rem 0.85rem; border-radius: 999px; text-decoration: none;
+  color: var(--fg); font-weight: 650; font-size: 0.88rem;
+}
+.subnav a:hover { background: var(--surface-2); }
+.subnav a[aria-current="page"] { background: var(--accent); color: var(--on-accent); }
+.lg.sw::before { background: var(--c); border-color: var(--c); }
+
+.s3d { margin: 1rem 0; }
+.s3d-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.7rem; }
+.s3d-seg {
+  display: inline-flex; gap: 0.2rem; padding: 0.2rem;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+}
+.s3d-seg .btn { border-color: transparent; }
+.s3d-seg .btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.s3d-toolbar > .btn[aria-pressed="true"] { background: var(--surface-2); border-color: var(--accent); }
+.s3d-body { display: grid; gap: 0.6rem; grid-template-columns: minmax(0, 1fr); }
+.s3d-stage {
+  position: relative; overflow: hidden; height: clamp(380px, 62vh, 580px);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: radial-gradient(ellipse at 50% 30%, var(--surface) 0%, var(--surface-2) 100%);
+}
+.s3d-stage canvas { display: block; outline: none; cursor: grab; }
+.s3d-stage canvas:active { cursor: grabbing; }
+.s3d-labels { position: absolute; top: 0; left: 0; pointer-events: none; }
+.s3d-label {
+  position: absolute; top: 0; left: 0; pointer-events: auto; cursor: pointer; white-space: nowrap;
+  font: 600 12px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border); border-radius: 999px; padding: 0.2rem 0.55rem;
+}
+.s3d-label:hover { border-color: var(--accent); }
+.s3d-label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.s3d-label.next { border-style: dashed; border-color: var(--c-planned); color: var(--c-planned); }
+.s3d-label.target { border-style: dashed; border-color: var(--c-target); color: var(--c-target); }
+.s3d-label[aria-current="true"] { background: var(--accent); border-color: var(--accent); border-style: solid; color: var(--on-accent); }
+.s3d-status { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); }
+.s3d-hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.s3d-panel {
+  align-self: start; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1rem 1.1rem;
+}
+.s3d-panel h3 { margin: 0.15rem 0 0.5rem; }
+.s3d-panel p { margin: 0 0 0.6rem; }
+.s3d-kicker { color: var(--accent-ink); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.s3d .s3d-panel .s3d-kicker { margin: 0; }
+.s3d-panel-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.8rem; }
+.s3d-fallback, .s3d.is-failed .s3d-body { display: none; }
+.s3d:not(.is-live):not(.is-loading) .s3d-fallback { display: block; }
+.s3d:not(.is-live) .s3d-toolbar, .s3d:not(.is-live):not(.is-loading) .s3d-body { display: none; }
+.s3d-fallback svg { display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto; }
+.fb-box { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; }
+.fb-box.src { stroke: var(--accent); }
+.fb-box.chk { stroke: var(--c-target); }
+.fb-box.db { stroke: var(--ok); }
+.fb-box.rej { fill: none; stroke: var(--c-gap); stroke-dasharray: 4 3; }
+.fb-t { font: 650 13px system-ui, sans-serif; fill: var(--fg); text-anchor: middle; }
+.fb-s { font: 11px system-ui, sans-serif; fill: var(--muted); text-anchor: middle; }
+.fb-e { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.fb-e.rej { stroke: var(--c-gap); stroke-dasharray: 4 3; }
+.fb-head { fill: var(--muted); }
+.fb-head.rej { fill: var(--c-gap); }
+@media (max-width: 760px) {
+  .s3d-stage { height: clamp(360px, 62vh, 540px); }
+  .s3d-label { font-size: 11px; padding: 0.15rem 0.45rem; }
 }

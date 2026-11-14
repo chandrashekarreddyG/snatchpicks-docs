@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnatchPicks — Scraper architecture (3D)</title>
+  <meta name="description" content="An interactive 3D model of the SnatchPicks scraper: five partner sources, fetch and normalise, duplicate and price checks, the review queue, admin approval and where live deals go.">
+  <meta property="og:title" content="SnatchPicks — Scraper architecture (3D)">
+  <meta property="og:description" content="Rotate the SnatchPicks deal pipeline in 3D and follow deals from partner feeds through the checks to the site, the app, Telegram and alerts.">
+  <meta name="theme-color" content="#f97316">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="../assets/site.js"></script>
+  <script type="module" src="../assets/scraper3d.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <a class="brand" href="../index.html">Snatch<span>Picks</span></a>
+    <ul class="site-nav">
+      <li><a href="../index.html">Overview</a></li>
+      <li><a href="../current.html">Current implementation</a></li>
+      <li><a href="../architecture.html">Architecture</a></li>
+      <li><a href="../recommendations.html">Recommendations</a></li>
+      <li><a href="../hosting.html">Hosting &amp; cost</a></li>
+      <li><a href="./" class="active" aria-current="page">Scraper</a></li>
+    </ul>
+    <ol>
+      <li><a href="#model">The pipeline in 3D</a></li>
+      <li><a href="#legend">Reading the model</a></li>
+      <li><a href="#changing">Today vs in progress</a></li>
+    </ol>
+  </nav>
+
+  <main id="top">
+    <nav class="subnav" aria-label="Scraper pages">
+      <a href="./" aria-current="page">3D architecture</a>
+      <a href="details.html">How it works</a>
+    </nav>
+
+    <header class="hero" id="overview">
+      <div class="eyebrow">Scraper architecture</div>
+      <h1>How deals flow, <span>in 3D</span></h1>
+      <p class="lead">
+        The scraper collects deals from partner APIs and affiliate feeds, checks them, and queues
+        them for a person to approve. Rotate the model, follow the moving dots, and select any step
+        to read what it does.
+      </p>
+      <div class="pills">
+        <span class="pill">🔌 5 partner sources</span>
+        <span class="pill">🧪 2 checks, then a review queue</span>
+        <span class="pill">🧑‍⚖️ A person approves every deal</span>
+        <span class="pill">🚫 No web scraping</span>
+      </div>
+    </header>
+
+    <section id="model">
+      <h2><span class="num">1</span>The pipeline in 3D</h2>
+      <p class="intro">Each shape is a step; each dot is a deal on its way through. Some dots turn grey or red and drop out at the checks, just as real items do. Switch to <strong>In progress</strong> to see the improvements being built.</p>
+
+      <div class="s3d" id="s3d">
+        <div class="s3d-toolbar" role="toolbar" aria-label="3D view controls">
+          <div class="s3d-seg" role="group" aria-label="Layer">
+            <button class="btn" type="button" data-layer="today" aria-pressed="true">Today</button>
+            <button class="btn" type="button" data-layer="next" aria-pressed="false">In progress</button>
+          </div>
+          <button class="btn" type="button" data-action="reset">Reset view</button>
+          <button class="btn" type="button" data-action="pause" aria-pressed="false">Pause animation</button>
+        </div>
+
+        <div class="s3d-body">
+          <div class="s3d-stage" id="s3d-stage">
+            <p class="s3d-status">Loading the 3D view…</p>
+          </div>
+          <p class="s3d-hint">Drag to rotate · scroll or pinch to zoom · right-drag or two fingers to pan · Tab to a label and press Enter</p>
+          <aside class="s3d-panel" id="s3d-panel" aria-labelledby="s3d-panel-title">
+            <div class="s3d-panel-body" aria-live="polite">
+              <p class="s3d-kicker">How to explore</p>
+              <h3 id="s3d-panel-title">Pick a step</h3>
+              <p>Click or tap a shape, or move through the labels with Tab and press Enter, to read what that step does.</p>
+              <p>Dots take the colour of the source they came from. Grey dots are duplicates, red dots have a bad price or were rejected in review.</p>
+            </div>
+            <div class="s3d-panel-nav">
+              <button class="btn" type="button" data-step="prev" disabled>← Previous</button>
+              <button class="btn" type="button" data-step="next">Start at step 1 →</button>
+            </div>
+          </aside>
+        </div>
+
+        <div class="s3d-fallback" id="s3d-fallback">
+          <div class="callout warn" id="s3d-fallback-msg">The interactive 3D view needs JavaScript and WebGL 2. Here is the same pipeline as a flat diagram.</div>
+          <figure class="diagram">
+            <svg viewBox="0 0 560 790" role="img" aria-labelledby="fb-title fb-desc">
+              <title id="fb-title">Scraper pipeline</title>
+              <desc id="fb-desc">Five partner sources (Amazon via Keepa, Flipkart, Myntra, Cuelinks, INRDeals) feed a fetch step started by a schedule or a manual run, which writes one run record per source. Items are normalised, checked for duplicates and bad prices, saved to the review queue, reviewed by an admin, and then go live on the website, in the app, on Telegram and in deal alerts.</desc>
+              <defs>
+                <marker id="fb-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fb-head" d="M0,0 L10,5 L0,10 z"/></marker>
+                <marker id="fb-arrow-rej" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fb-head rej" d="M0,0 L10,5 L0,10 z"/></marker>
+              </defs>
+              <g marker-end="url(#fb-arrow)">
+                <path class="fb-e" d="M60 60 L200 98"/><path class="fb-e" d="M170 60 L240 98"/><path class="fb-e" d="M280 60 L280 98"/>
+                <path class="fb-e" d="M390 60 L320 98"/><path class="fb-e" d="M500 60 L360 98"/>
+                <path class="fb-e" d="M140 125 L158 125"/><path class="fb-e" d="M400 125 L418 125"/>
+                <path class="fb-e" d="M280 150 L280 188"/><path class="fb-e" d="M280 240 L280 278"/><path class="fb-e" d="M280 330 L280 368"/>
+                <path class="fb-e" d="M280 420 L280 458"/><path class="fb-e" d="M280 510 L280 548"/><path class="fb-e" d="M280 600 L280 638"/>
+                <path class="fb-e" d="M280 690 L72 728"/><path class="fb-e" d="M280 690 L207 728"/><path class="fb-e" d="M280 690 L342 728"/><path class="fb-e" d="M280 690 L477 728"/>
+              </g>
+              <g marker-end="url(#fb-arrow-rej)">
+                <path class="fb-e rej" d="M160 305 L142 305"/><path class="fb-e rej" d="M160 395 L142 395"/><path class="fb-e rej" d="M160 575 L142 575"/>
+              </g>
+              <rect class="fb-box src" x="10" y="10" width="100" height="50" rx="10"/><text class="fb-t" x="60" y="32">Amazon</text><text class="fb-s" x="60" y="49">via Keepa</text>
+              <rect class="fb-box src" x="120" y="10" width="100" height="50" rx="10"/><text class="fb-t" x="170" y="32">Flipkart</text><text class="fb-s" x="170" y="49">affiliate API</text>
+              <rect class="fb-box src" x="230" y="10" width="100" height="50" rx="10"/><text class="fb-t" x="280" y="32">Myntra</text><text class="fb-s" x="280" y="49">affiliate feed</text>
+              <rect class="fb-box src" x="340" y="10" width="100" height="50" rx="10"/><text class="fb-t" x="390" y="32">Cuelinks</text><text class="fb-s" x="390" y="49">offers API</text>
+              <rect class="fb-box src" x="450" y="10" width="100" height="50" rx="10"/><text class="fb-t" x="500" y="32">INRDeals</text><text class="fb-s" x="500" y="49">deal feed</text>
+              <rect class="fb-box" x="10" y="100" width="130" height="50" rx="10"/><text class="fb-t" x="75" y="122">Trigger</text><text class="fb-s" x="75" y="139">schedule or manual</text>
+              <rect class="fb-box" x="160" y="100" width="240" height="50" rx="10"/><text class="fb-t" x="280" y="122">Fetch with retries</text><text class="fb-s" x="280" y="139">15 s limit · up to 3 retries</text>
+              <rect class="fb-box db" x="420" y="100" width="130" height="50" rx="10"/><text class="fb-t" x="485" y="122">Run record</text><text class="fb-s" x="485" y="139">one per source</text>
+              <rect class="fb-box" x="160" y="190" width="240" height="50" rx="10"/><text class="fb-t" x="280" y="212">Normalise</text><text class="fb-s" x="280" y="229">one common shape</text>
+              <rect class="fb-box chk" x="160" y="280" width="240" height="50" rx="10"/><text class="fb-t" x="280" y="302">Duplicate check</text><text class="fb-s" x="280" y="319">link vs live deals</text>
+              <rect class="fb-box rej" x="10" y="285" width="130" height="40" rx="10"/><text class="fb-t" x="75" y="302">Duplicate</text><text class="fb-s" x="75" y="317">skipped</text>
+              <rect class="fb-box chk" x="160" y="370" width="240" height="50" rx="10"/><text class="fb-t" x="280" y="392">Price check</text><text class="fb-s" x="280" y="409">0 &lt; price ≤ ₹1 crore · MRP &gt; price</text>
+              <rect class="fb-box rej" x="10" y="375" width="130" height="40" rx="10"/><text class="fb-t" x="75" y="392">Bad price</text><text class="fb-s" x="75" y="407">dropped</text>
+              <rect class="fb-box db" x="160" y="460" width="240" height="50" rx="10"/><text class="fb-t" x="280" y="482">Review queue</text><text class="fb-s" x="280" y="499">pending review · one row per source item</text>
+              <rect class="fb-box" x="160" y="550" width="240" height="50" rx="10"/><text class="fb-t" x="280" y="572">Admin review</text><text class="fb-s" x="280" y="589">pick a category · approve or reject</text>
+              <rect class="fb-box rej" x="10" y="555" width="130" height="40" rx="10"/><text class="fb-t" x="75" y="572">Rejected</text><text class="fb-s" x="75" y="587">by a person</text>
+              <rect class="fb-box db" x="160" y="640" width="240" height="50" rx="10"/><text class="fb-t" x="280" y="662">Live deals</text><text class="fb-s" x="280" y="679">verified</text>
+              <rect class="fb-box" x="10" y="730" width="125" height="50" rx="10"/><text class="fb-t" x="72" y="752">Website</text><text class="fb-s" x="72" y="769">feeds and search</text>
+              <rect class="fb-box" x="145" y="730" width="125" height="50" rx="10"/><text class="fb-t" x="207" y="752">App</text><text class="fb-s" x="207" y="769">same live deals</text>
+              <rect class="fb-box" x="280" y="730" width="125" height="50" rx="10"/><text class="fb-t" x="342" y="752">Telegram</text><text class="fb-s" x="342" y="769">≥ 20% off</text>
+              <rect class="fb-box" x="415" y="730" width="125" height="50" rx="10"/><text class="fb-t" x="477" y="752">Deal alerts</text><text class="fb-s" x="477" y="769">matching users</text>
+            </svg>
+            <figcaption>Today's pipeline. In progress: Cuelinks Offers API v3, failed fetches recorded as failed runs, duplicates found by the real merchant link, invalid prices dropped, safer logging.</figcaption>
+          </figure>
+        </div>
+      </div>
+      <p>Prefer words to shapes? <a href="details.html">How the scraper works</a> walks through the same pipeline in plain language.</p>
+    </section>
+
+    <section id="legend">
+      <h2><span class="num">2</span>Reading the model</h2>
+      <p class="intro">Deals flow from left to right on wide screens and from top to bottom on narrow ones.</p>
+      <h3>Shapes</h3>
+      <div class="legend">
+        <span class="lg sw" style="--c: #ff9900">Amazon · Keepa (cube)</span>
+        <span class="lg sw" style="--c: #2874f0">Flipkart (cylinder)</span>
+        <span class="lg sw" style="--c: #ff3f6c">Myntra (cone)</span>
+        <span class="lg sw" style="--c: #10b981">Cuelinks (octahedron)</span>
+        <span class="lg sw" style="--c: #ca8a04">INRDeals (dodecahedron)</span>
+      </div>
+      <div class="legend">
+        <span class="lg sw" style="--c: var(--muted)">Triggers</span>
+        <span class="lg sw" style="--c: var(--accent)">Fetch and normalise</span>
+        <span class="lg sw" style="--c: var(--c-target)">Checks</span>
+        <span class="lg sw" style="--c: var(--ok)">Stored data (queue, run records, live deals)</span>
+        <span class="lg sw" style="--c: var(--warn)">Admin review</span>
+        <span class="lg sw" style="--c: var(--accent-ink)">Outputs</span>
+        <span class="lg sw" style="--c: var(--c-planned)">In progress (wireframe)</span>
+      </div>
+      <h3>Dots</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>What you see</th><th>What it means</th></tr></thead>
+        <tbody>
+          <tr><td>A dot in a source's colour</td><td>A deal from that partner, moving to the next step.</td></tr>
+          <tr><td>A dot that pauses in the queue</td><td>A deal waiting for a person to review it.</td></tr>
+          <tr><td>A dot that turns grey and drops</td><td>A duplicate of a deal that is already on the site, so it is skipped.</td></tr>
+          <tr><td>A dot that turns red and drops</td><td>An item with an impossible price, or one a reviewer rejected.</td></tr>
+          <tr><td>A purple dot on a dashed path</td><td>An improvement being built (shown with <strong>In progress</strong> on).</td></tr>
+          <tr><td>Thin lines without dots</td><td>Control links: a trigger starting a run, or a run record being written.</td></tr>
+        </tbody>
+      </table></div>
+      <p>With reduced motion turned on in your system settings, the model stays still: no dots and no slow rotation. Everything else still works.</p>
+    </section>
+
+    <section id="changing">
+      <h2><span class="num">3</span>Today vs in progress</h2>
+      <p class="intro">Everything on the <strong>Today</strong> layer is in the code now. The <strong>In progress</strong> layer adds work that is being built and reviewed but has not shipped.</p>
+      <div class="grid">
+        <div class="card"><h4>Cuelinks Offers API v3 <span class="badge planned">In progress</span></h4><p>Reads offers page by page from the newer API, with a short pause between pages.</p></div>
+        <div class="card"><h4>Failed runs recorded <span class="badge planned">In progress</span></h4><p>A partner outage is recorded as a failed run with a reason, not as a quiet run with no deals.</p></div>
+        <div class="card"><h4>Real merchant link <span class="badge planned">In progress</span></h4><p>Duplicates are found by the store link inside an affiliate redirect, not by the redirect itself.</p></div>
+        <div class="card"><h4>Invalid prices dropped <span class="badge planned">In progress</span></h4><p>Placeholder prices from feeds are rejected instead of being saved as “no price”.</p></div>
+        <div class="card"><h4>Safer logging <span class="badge planned">In progress</span></h4><p>Run logs keep only what is needed to understand a run.</p></div>
+        <div class="card"><h4>Scoring, niche filter, expiry <span class="badge target">Target</span></h4><p>The longer-term pipeline: score items, set aside off-niche ones, and end deals when the offer ends. See <a href="../recommendations.html#ingestion">Recommendations</a>.</p></div>
+      </div>
+    </section>
+
+    <footer>
+      Reflects the SnatchPicks codebase as of commit <code>33590ba3</code>, November 2026; “In progress” items are under review and not yet shipped. 3D view built with Three.js.
+    </footer>
+  </main>
+</div>
+</body>
+</html>

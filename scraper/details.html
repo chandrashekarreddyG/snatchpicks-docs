@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnatchPicks — How the scraper works</title>
+  <meta name="description" content="How the SnatchPicks scraper works, in plain language: its partner sources, the journey of one deal, the checks and human review, schedule and run records, and what is changing.">
+  <meta property="og:title" content="SnatchPicks — How the scraper works">
+  <meta property="og:description" content="Where SnatchPicks deals come from, how each one is checked and reviewed before it goes live, and the improvements in progress.">
+  <meta name="theme-color" content="#f97316">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script type="module" src="../assets/site.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <a class="brand" href="../index.html">Snatch<span>Picks</span></a>
+    <ul class="site-nav">
+      <li><a href="../index.html">Overview</a></li>
+      <li><a href="../current.html">Current implementation</a></li>
+      <li><a href="../architecture.html">Architecture</a></li>
+      <li><a href="../recommendations.html">Recommendations</a></li>
+      <li><a href="../hosting.html">Hosting &amp; cost</a></li>
+      <li><a href="./" class="active" aria-current="true">Scraper</a></li>
+    </ul>
+    <ol>
+      <li><a href="#what">What the scraper does</a></li>
+      <li><a href="#sources">Sources</a></li>
+      <li><a href="#journey">The journey of one deal</a></li>
+      <li><a href="#checks">The checks</a></li>
+      <li><a href="#runs">Schedule and runs</a></li>
+      <li><a href="#changing">What's changing</a></li>
+      <li><a href="#rules">Rules we follow</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </nav>
+
+  <main id="top">
+    <nav class="subnav" aria-label="Scraper pages">
+      <a href="./">3D architecture</a>
+      <a href="details.html" aria-current="page">How it works</a>
+    </nav>
+
+    <header class="hero" id="overview">
+      <div class="eyebrow">Scraper · plain language</div>
+      <h1>How the <span>scraper</span> works</h1>
+      <p class="lead">
+        Where SnatchPicks gets deals from partners, how each one is checked, and why a person
+        approves every deal before anyone sees it.
+      </p>
+      <div class="pills">
+        <span class="pill">🔌 Partner APIs and feeds only</span>
+        <span class="pill">🧪 Duplicate and price checks</span>
+        <span class="pill">🧑‍⚖️ Human review</span>
+        <span class="pill">🕒 Every 30 minutes, when switched on</span>
+      </div>
+    </header>
+
+    <section id="what">
+      <h2><span class="num">1</span>What the scraper does</h2>
+      <p>
+        The scraper is one script that collects deals from SnatchPicks' partners: a price-tracking
+        service for Amazon and affiliate programmes for Flipkart, Myntra and two affiliate networks,
+        Cuelinks and INRDeals. It asks each partner for its current offers, turns every offer into the
+        same simple format, throws away duplicates and items with impossible prices, and puts the rest
+        in a review queue. A person then picks a category and approves or rejects each one; approved
+        deals go live on the site and the app, and can be shared on Telegram and in deal alerts.
+        Despite the name, it doesn't scrape retailer websites; it only reads data that partners
+        provide for this purpose.
+      </p>
+      <div class="callout">
+        <strong>Prefer a picture?</strong>
+        The <a href="./">3D architecture</a> page shows the same pipeline as a model you can rotate,
+        with deals flowing through it.
+      </div>
+    </section>
+
+    <section id="sources">
+      <h2><span class="num">2</span>Sources</h2>
+      <p class="intro">Five sources run one after another. Each needs access from its partner; a source without it is skipped, and no deals are made up to fill the gap. None is connected yet.</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Source</th><th>What it provides</th><th>Access method</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Amazon (via Keepa)</td><td>Recent Amazon.in price drops of 20% or more, up to 50 per run</td><td>Partner API from Keepa, a price-tracking service; no web scraping</td><td><span class="badge">Needs partner key</span></td></tr>
+          <tr><td>Flipkart</td><td>Flipkart's current best offers, up to 80 products per run</td><td>Flipkart affiliate API; no web scraping</td><td><span class="badge">Needs partner key</span></td></tr>
+          <tr><td>Myntra</td><td>Fashion products, up to 80 per run</td><td>Affiliate feed from an affiliate network; no web scraping</td><td><span class="badge">Needs partner key</span></td></tr>
+          <tr><td>Cuelinks</td><td>Live offers from hundreds of Indian stores in one feed, up to 100 per run</td><td>Partner API from an affiliate network; no web scraping</td><td><span class="badge">Needs partner key</span> <span class="badge planned">v3 in progress</span></td></tr>
+          <tr><td>INRDeals</td><td>Live deals from many Indian stores, up to 100 per run</td><td>Affiliate feed from an affiliate network; no web scraping</td><td><span class="badge">Needs partner key</span></td></tr>
+        </tbody>
+      </table></div>
+      <p>Cuelinks and INRDeals are aggregators: one account covers many stores, including beauty stores, which suits the beauty-first launch. The <a href="../recommendations.html#scraper">Recommendations</a> page explains why one of them is the suggested first source.</p>
+    </section>
+
+    <section id="journey">
+      <h2><span class="num">3</span>The journey of one deal</h2>
+      <p class="intro">Follow a single offer, say a moisturiser at 35% off, from a partner feed to a shopper's phone.</p>
+      <ol class="steps">
+        <li><strong>A run starts.</strong> A schedule can start the scraper every 30 minutes, or a team member starts it by hand, for every source or just one.</li>
+        <li><strong>The partners are asked in turn.</strong> Amazon (through Keepa), Flipkart, Myntra, Cuelinks and INRDeals. A source whose partner key isn't set up is skipped.</li>
+        <li><strong>The offer is fetched and tidied.</strong> Each request has a time limit and is retried a few times if the partner is briefly unavailable. The offer is then put into a common format: the partner's own ID, title, link, price, original price (MRP), image and category.</li>
+        <li><strong>Three checks run, in order.</strong> Is it already on the site (by link)? Does the price make sense? If both pass, it is saved to the review queue as “pending review”, or, if the partner sent it before, its price is refreshed.</li>
+        <li><strong>The run is recorded.</strong> Each source gets a run record: when it ran, whether it finished, how many deals it found and how many were new.</li>
+        <li><strong>A person reviews it.</strong> An admin picks the category, can tidy the title or add a coupon, and approves it. The deal goes live, marked as verified, and, because it is at least 20% off, it can be posted to the Telegram channel.</li>
+        <li><strong>Interested shoppers hear about it.</strong> Every 30 minutes, the deal-alert job picks up newly approved deals and notifies people whose alerts match, by email or app push: straight away, or in their daily or weekly digest.</li>
+      </ol>
+      <figure class="diagram">
+<pre class="mermaid">
+flowchart TD
+  T["Schedule or manual run"] --> A["Five partner sources<br/>(skipped without access)"]
+  A --> F["Fetch with retries<br/>and a time limit"]
+  F --> N["Normalise to one format"]
+  N --> D{"Already on the site?"}
+  D -->|"yes"| X1["Skipped"]
+  D -->|"no"| P{"Price makes sense?"}
+  P -->|"no"| X2["Dropped"]
+  P -->|"yes"| Q[("Review queue")]
+  Q --> R{"Admin review"}
+  R -->|"reject"| X3["Rejected"]
+  R -->|"approve with a category"| L[("Live deal")]
+  L --> O["Website and app"]
+  L --> TG["Telegram, if 20% or more off"]
+  L --> AL["Alerts to matching users"]
+</pre>
+        <figcaption>One deal's path. Each source is handled the same way, one after another.</figcaption>
+      </figure>
+    </section>
+
+    <section id="checks">
+      <h2><span class="num">4</span>The checks</h2>
+      <p class="intro">SnatchPicks promises “No fake MRP. Ever.” The checks keep obvious junk out; a person handles the rest.</p>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Check</th><th>What it looks at</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td>Duplicates</td><td>The offer's link, compared with every deal already live or waiting for moderation. Only the store address and product path count; tracking tags are ignored.</td><td>A match is skipped, so the same product isn't listed twice.</td></tr>
+          <tr><td>Price sanity</td><td>A price of zero or less, or above ₹1 crore, is treated as bad data. An MRP that isn't above the price is a fake discount.</td><td>A bad price drops the item. A bad MRP is removed, but the item stays. Offers with no price at all, such as coupons, pass.</td></tr>
+          <tr><td>Review queue</td><td>Each item is stored once per partner and the partner's own ID.</td><td>New items wait as “pending review”. An item seen again only gets its price refreshed; a reviewed item keeps its decision.</td></tr>
+        </tbody>
+      </table></div>
+      <h3>Why a person reviews every deal</h3>
+      <ul>
+        <li><strong>Trust is the product.</strong> One fake “was ₹9,999, now ₹999” listing undoes a lot of goodwill; automatic checks only catch the obvious cases.</li>
+        <li><strong>Partners send everything.</strong> Feeds cover every category, and SnatchPicks is launching with beauty and skincare, so someone has to pick the right category and leave out what doesn't fit.</li>
+        <li><strong>Partner data can be wrong.</strong> Titles, prices and images are sometimes stale or garbled. A reviewer can fix the title or add a coupon or bank offer before approving.</li>
+        <li><strong>Nothing goes out unseen.</strong> An approved deal can be posted to Telegram straight away, so a person should see it first.</li>
+      </ul>
+      <p>Later, a score could sort the queue so the best deals are reviewed first, and eventually let high-scoring deals from trusted stores skip the wait (see <a href="#changing">What's changing</a>).</p>
+    </section>
+
+    <section id="runs">
+      <h2><span class="num">5</span>Schedule and runs</h2>
+      <h3>How often</h3>
+      <p>The scraper is designed to run every 30 minutes. That schedule is switched off for now: no partner is connected yet, so scheduled runs would only find nothing. Until then the team can start a run by hand at any time, for all sources or just one. Each run has a ten-minute limit.</p>
+      <h3>What a run record holds</h3>
+      <div class="table-wrap"><table class="status-table">
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>Source</td><td>Which partner this record is for. Every source gets its own record in each run.</td></tr>
+          <tr><td>Status</td><td>Running, completed or failed.</td></tr>
+          <tr><td>Deals found</td><td>How many offers the partner returned.</td></tr>
+          <tr><td>New deals</td><td>How many of them were added to the review queue for the first time.</td></tr>
+          <tr><td>Started and ended</td><td>When the source's part of the run began and finished.</td></tr>
+          <tr><td>Error</td><td>A short reason, when the run failed.</td></tr>
+        </tbody>
+      </table></div>
+      <h3>When a partner is down</h3>
+      <p>Each request waits a limited time. If a partner is busy or briefly unavailable, the scraper waits and tries again a few times, waiting a little longer each time, then moves on to the next source, so one partner's problem doesn't block the others.</p>
+      <div class="callout warn">
+        <strong>Today, outages are not yet surfaced clearly.</strong>
+        A partner that is down can look like a quiet run with no new deals. Recording these as failed runs is in progress.
+      </div>
+    </section>
+
+    <section id="changing">
+      <h2><span class="num">6</span>What's changing</h2>
+      <p class="intro">These improvements are being built and reviewed. None of them has shipped yet.</p>
+      <ul>
+        <li><span class="badge planned">In progress</span> <strong>Cuelinks Offers API v3, with pagination.</strong> Cuelinks has retired the API version used today. The new version is read page by page, with a short pause between pages and a limit on how many pages are read, and each offer keeps its categories.</li>
+        <li><span class="badge planned">In progress</span> <strong>Failed fetches recorded as failed runs.</strong> When a partner is down, the run record will say “failed” with a short reason. A source that isn't set up will show as skipped, and the whole job fails if every connected source fails.</li>
+        <li><span class="badge planned">In progress</span> <strong>Duplicates found by the real merchant link.</strong> Affiliate networks wrap product links in their own redirect links, which can look alike for different products. The duplicate check will compare the store link inside the redirect instead; the redirect link is kept so clicks are still credited.</li>
+        <li><span class="badge planned">In progress</span> <strong>Invalid prices dropped.</strong> Placeholder prices that some feeds send, such as -1 or “N/A”, will be rejected by the price check instead of being saved as “no price”.</li>
+        <li><span class="badge planned">In progress</span> <strong>Safer logging.</strong> Run logs will keep only what is needed to understand a run.</li>
+      </ul>
+      <h3>Further out <span class="badge target">Target</span></h3>
+      <p>The target pipeline adds a <strong>niche filter</strong> that sets aside off-category items before review, a <strong>score</strong> that sorts the queue, and <strong>expiry</strong>, so a deal leaves the feed when the partner's offer ends (saving Cuelinks offer end dates is part of the work in progress). The <a href="../recommendations.html#ingestion">target ingestion pipeline</a> has the details and the order of work.</p>
+    </section>
+
+    <section id="rules">
+      <h2><span class="num">7</span>Rules we follow</h2>
+      <ul>
+        <li><strong>Partner APIs and feeds only.</strong> Every source is an official API or an affiliate feed that the partner offers for this use.</li>
+        <li><strong>No scraping of retailer websites.</strong> The scraper never reads store pages; where there is no partner access, there is no source.</li>
+        <li><strong>Respect partner terms.</strong> Follow each programme's terms on how often to ask, how to show prices and links, and how to credit clicks.</li>
+        <li><strong>No made-up data.</strong> A source without access returns nothing rather than placeholder deals.</li>
+        <li><strong>A person approves before anything goes live.</strong> Feed items wait in the review queue until an admin accepts them.</li>
+      </ul>
+    </section>
+
+    <section id="glossary">
+      <h2><span class="num">8</span>Glossary</h2>
+      <details>
+        <summary>Terms used on this page</summary>
+        <div class="table-wrap"><table class="status-table">
+          <tbody>
+            <tr><td>Adapter</td><td>The small piece of the scraper that talks to one partner and translates its data.</td></tr>
+            <tr><td>Affiliate feed</td><td>A list of products or offers that a shop or network provides to partners, whose links earn a commission when someone buys.</td></tr>
+            <tr><td>Affiliate network</td><td>A company, such as Cuelinks or INRDeals, that runs affiliate programmes for many shops through one account.</td></tr>
+            <tr><td>Keepa</td><td>A price-tracking service for Amazon that offers an API of price drops.</td></tr>
+            <tr><td>MRP</td><td>Maximum retail price: the printed list price that a discount is measured against.</td></tr>
+            <tr><td>Normalise</td><td>Turn each partner's own format into one common format.</td></tr>
+            <tr><td>Partner key</td><td>The access credential a partner issues so the scraper can use its API or feed.</td></tr>
+            <tr><td>Pagination</td><td>Reading a long list in pages rather than all at once.</td></tr>
+            <tr><td>Redirect link</td><td>A tracking link from an affiliate network that forwards the shopper to the store and credits the click.</td></tr>
+            <tr><td>Review queue</td><td>Where scraped items wait, marked “pending review”, until an admin approves or rejects them.</td></tr>
+            <tr><td>Run record</td><td>A short log entry per source per run: status, counts, times and any error.</td></tr>
+            <tr><td>Upsert</td><td>Add an item if it is new, or update the existing one if it was seen before.</td></tr>
+          </tbody>
+        </table></div>
+      </details>
+    </section>
+
+    <footer>
+      Reflects the SnatchPicks codebase as of commit <code>33590ba3</code>, November 2026; “In progress” items are under review and not yet shipped. Diagrams rendered with Mermaid.
+    </footer>
+  </main>
+</div>
+</body>
+</html>
